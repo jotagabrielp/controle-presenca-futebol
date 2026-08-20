@@ -1,0 +1,139 @@
+{
+  "app_name": "FutLista",
+  "personality": "4 Tactile / Playful LIGHT",
+  "personality_one_liner": "A friendly, energetic, and touchable sports tracking app that feels like a weekend game with friends, using warm creams, turf green, and playful yellow accents.",
+  "color": {
+    "surface": "#FDFBF7",
+    "onSurface": "#1A1D1A",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1A1D1A",
+    "surfaceTertiary": "#F0F3EF",
+    "onSurfaceTertiary": "#2E4032",
+    "surfaceInverse": "#232B25",
+    "onSurfaceInverse": "#FDFBF7",
+    "brand": "#1E8449",
+    "brandPrimary": "#1E8449",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#F4D03F",
+    "onBrandSecondary": "#1A1D1A",
+    "brandTertiary": "#E9F2EC",
+    "onBrandTertiary": "#12512D",
+    "success": "#27AE60",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F1C40F",
+    "onWarning": "#1A1D1A",
+    "error": "#D32F2F",
+    "onError": "#FFFFFF",
+    "info": "#1E8449",
+    "onInfo": "#FFFFFF",
+    "border": "#E0E5E2",
+    "borderStrong": "#C8D1CC",
+    "divider": "#E0E5E2"
+  },
+  "typography": {
+    "displayFontFamily": "Fredoka",
+    "textFontFamily": "Nunito",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Make the interface feel touchable: use chunky cards, rounded containers, oversized tap areas, and clear foreground/background layering.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "2",
+  "navigation": "stack_only",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": "true",
+    "do's": [
+      "Sticky header over scrolling player list",
+      "FAB background",
+      "Featured financial summary card overlay"
+    ],
+    "dont's": [
+      "Every list item",
+      "Form inputs",
+      "Body text areas"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home Dashboard (Lista Semanal)",
+      "purpose": "Provide an immediate overview of this week's football match, attendance, and financials, with quick-action toggles for presence and BBQ.",
+      "states": {
+        "loading": "Centered spinner in brand color.",
+        "empty": "Playful illustration of a lonely football with text 'Nenhum jogador confirmado ainda!' and 'Adicionar Jogador' primary CTA.",
+        "error": "Message 'Não foi possível carregar a lista' com botão 'Tentar Novamente'."
+      },
+      "layout": "1. Glass sticky header over a subtle background photo of a football pitch. 2. A 'Resumo Financeiro' top card (Total R$, Mensalistas R$60, Convidados R$20, Churrasco R$20) as a horizontal scroll or 2x2 grid. 3. Section titled 'Jogadores'. 4. Chunky list cards for each member. Each card has an Avatar (Initials), Name, Type badge (Mensalista/Convidado), a primary toggle for 'Vai Jogar?', and a secondary toggle (pill with flame/meat icon) for '+ Churrasco R$20'. 5. Sticky FAB 'Share via WhatsApp' bottom right. Sticky primary button 'Adicionar Jogador' anchored at the bottom inside a KeyboardAvoidingView/Safe area."
+    },
+    {
+      "name": "Adicionar Jogador (Modal/Sheet)",
+      "purpose": "A bottom sheet to quickly register a new player into the team database.",
+      "states": {
+        "loading": "Spinner on the save button.",
+        "empty": "N/A",
+        "error": "Error message se o nome estiver vazio."
+      },
+      "layout": "BottomSheet with a drag handle. Title 'Novo Jogador'. A large text input for 'Nome do Jogador' (label above input). A Segmented Control or two large selectable chunky cards side-by-side for type: 'Mensalista (R$60)' vs 'Convidado (R$20)'. A prominent sticky 'Salvar' button at the bottom."
+    }
+  ],
+  "images": {
+    "hero_pitch_background": {
+      "url": "https://images.unsplash.com/photo-1459865264687-595d652de67e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxmb290YmFsbCUyMGZpZWxkJTIwcGl0Y2glMjBncmFzc3xlbnwwfHx8fDE3ODMwMDEzMTR8MA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1459865264687-595d652de67e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxmb290YmFsbCUyMGZpZWxkJTIwcGl0Y2glMjBncmFzc3xlbnwwfHx8fDE3ODMwMDEzMTR8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Close-up of a white line on green grass in a soccer field"
+    },
+    "churrasco_header": {
+      "url": "https://images.unsplash.com/photo-1558030089-02acba3c214e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxicmF6aWxpYW4lMjBiYXJiZWN1ZSUyMGNodXJyYXNjbyUyMG1lYXR8ZW58MHx8fHwxNzg3MjMwMzM2fDA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1558030089-02acba3c214e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxicmF6aWxpYW4lMjBiYXJiZWN1ZSUyMGNodXJyYXNjbyUyMG1lYXR8ZW58MHx8fHwxNzg3MjMwMzM2fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Person barbecuing meat over charcoal"
+    }
+  },
+  "haptics": {
+    "attendance_toggle": "impactLight",
+    "churrasco_toggle": "impactMedium",
+    "add_player_submit": "notificationSuccess",
+    "share_whatsapp": "impactLight"
+  },
+  "instructions_to_main_agent": [
+    "Use Personality 4 (Tactile / Playful) to create a friendly, sports-community feel. Fredoka + Nunito give it a casual, approachable touch.",
+    "Implement chunky interactive cards for the player list. The user should easily toggle 'Vai Jogar' and '+ Churrasco' on each card.",
+    "Place the hero_pitch_background image at the top of the Home Dashboard with a gradient-to-dark scrim fading down, overlaying the Financial Summary on top of it.",
+    "Ensure 'Mensalista' and 'Convidado' visual badges differentiate the player types. e.g., Mensalista gets a solid brandTertiary badge with onBrandTertiary text, and Convidado gets a subtle surfaceTertiary badge.",
+    "Financial Summary should break down the total into three small data points: 'Mensalidades', 'Convidados', and 'Churrasco', with a large 'Total Arrecadado' sum.",
+    "Include a Floating Action Button for 'Share via WhatsApp' (using Phosphor WhatsappLogo) and a sticky block at the bottom for 'Adicionar Jogador' inside a Safe Area.",
+    "Wire up haptics on player toggles (Vai jogar? / Churrasco) using expo-haptics to provide tactile confirmation.",
+    "Do NOT use pure white cards on pure white backgrounds; use the warm surface (#FDFBF7) background behind the surfaceSecondary (#FFFFFF) chunky cards for depth.",
+    "The Churrasco image can be used as a visual header in the 'Resumo Financeiro' or Churrasco info panel if needed."
+  ]
+}
