@@ -50,6 +50,11 @@ export interface PixSettings {
   bank: string;
 }
 
+export interface TeamSettings {
+  team_name: string;
+  team_emoji: string;
+}
+
 const url = (p: string) => `${BACKEND_URL}/api${p}`;
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -94,4 +99,8 @@ export const api = {
   getPix: () => req<PixSettings>("/settings/pix"),
   updatePix: (s: PixSettings) =>
     req<PixSettings>("/settings/pix", { method: "PUT", body: JSON.stringify(s) }),
+
+  getTeam: () => req<TeamSettings>("/settings/team"),
+  updateTeam: (s: TeamSettings) =>
+    req<TeamSettings>("/settings/team", { method: "PUT", body: JSON.stringify(s) }),
 };

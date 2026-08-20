@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 3 retest of the Home auto-refresh bug fix (useFocusEffect added in /app/frontend/app/index.tsx). Frontend-only verification on mobile viewport 390x844 against https://squad-checker.preview.emergentagent.com. All 4 targeted tests PASS: (1) Home → Settings → change team_name to 'Fut Teste 3404' + change emoji to 🔥 → Save → back → team-name and emoji update automatically without manual pull-to-refresh; (2) Home → Add Player (TEST_Auto convidado) → Save → auto-back → player list count grew from 4 to 5 and new name is visible; (3) Empty team_name save round-trip correctly falls back to 'Turma do Futebol' fallback in Home; (4) Home ↔ Settings ↔ back navigation smoke — no white screen, no red screen error, team-name testID still visible after round-trip. All testIDs verified present and visible: team-name, week-label, summary-total, invite-friends-btn, share-whatsapp-btn, open-settings-btn, open-weeks-btn, add-player-btn. Backend NOT retested per request (was 13/13 previous iteration and only /app/frontend/app/index.tsx changed). Deprecated packages detected: none. Minor cosmetic: shadow* style props deprecation warnings still logged on web (index.tsx summaryCard/card) — pre-existing, not introduced this iteration.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow props", "issue": "React Native Web deprecation warning: 'shadow*' style props are deprecated. Use 'boxShadow'. Reference: /app/frontend/app/index.tsx:579-583 (summaryCard) and /app/frontend/app/index.tsx:652-656 (card). Cosmetic only; not blocking. Pre-existing from iteration 2."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional cleanup: migrate shadow* style props to boxShadow in /app/frontend/app/index.tsx (summaryCard and card style blocks) to silence the React Native Web deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "useFocusEffect(useCallback(() => load(), [load])) correctly placed after the initial useEffect in /app/frontend/app/index.tsx (lines 72-76). Because load is memoized via useCallback with [] deps, this will not create an infinite loop and will run every time Home regains focus (after router.back() from /settings, /add-player, /weeks, /pix, /history). Verified empirically via 4 Playwright flows.",
+    "Initial useEffect still handles the very first load with the loading spinner, and useFocusEffect handles refresh-on-focus — sensible split.",
+    "Backend endpoints unchanged; no server.py diff needed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not_retested (100% previous)", "frontend": "100%"},
+  "seed_data_creation": "One TEST_Auto convidado player was temporarily created via the Add Player flow to validate refresh, then deleted via DELETE /api/players/{id}. Team_name was left blank (fallback 'Turma do Futebol') — matches original empty state.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug 'Home stale after Settings save' from iteration 2 is fully resolved. useFocusEffect strategy also cascades benefit to all screens that mutate state and then router.back() (add-player, pix, settings). Only remaining non-blocking noise: shadow* deprecation warning on web. Backend still green from previous iteration (13/13). Available testIDs on Home: team-name, week-label, summary-total, summary-card, invite-friends-btn, share-whatsapp-btn, open-settings-btn, open-weeks-btn, add-player-btn, filter-chip-{key}, player-card-{id}, toggle-attend-{id}, toggle-churras-{id}, toggle-paid-{id}, open-history-{id}, open-pix-{id}, home-loading, home-empty.",
+  "rca_of_issue": "Previous iteration RCA: Home only ran load() once on mount, so router.back() from Settings did not refresh team/pix state. Fix in iteration 3 (already applied by main agent): imported useFocusEffect from expo-router and added useFocusEffect(useCallback(() => load(), [load])) in /app/frontend/app/index.tsx right after the mount useEffect. Verification: after Save+back the team-name testID updates from 'Turma do Futebol' → 'Fut Teste 3404' within ~1.5s automatically, and new player rows appear in the FlatList without any manual pull-to-refresh."
+}

@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 2 validated the new /api/settings/team endpoint, N+1 query optimizations, and the Settings/Home UI additions. Backend: 13/13 pytest cases pass (root, players CRUD, current week, pix get/put+persist, attendance upsert flow with clearing, NEW team get default, NEW team put+persist, NEW list_weeks structure with all required summary keys, NEW list_weeks summary consistency after attendance upsert, NEW player_history structure/totals/404). GET /api/settings/team returns {team_name, team_emoji}. PUT /api/settings/team persists and round-trips. Frontend (mobile 390x844): Home shows testID='team-name' with fallback 'Turma do Futebol' + fallback emoji '⚽' when empty; after saving a custom team_name+emoji via /settings, backend correctly stores it and a fresh reload of Home renders it ('🔥 Fut da Firma'). Settings screen exposes testID='input-team-name', all emoji-{e} pickers (⚽🏆🔥💪🥅🏟️🍺🍖⭐🎯), and testID='save-settings-btn' + testID='back-btn'. Navigation between Home ↔ Settings ↔ Weeks all works. INTEGRATION BUG FOUND: Home does NOT auto-refresh when user returns from /settings via router.back(); the load() runs only once in useEffect, so the newly saved team_name/emoji (and pix) remain stale until the user does a pull-to-refresh or full reload. shadow* deprecation warnings still present on web (index.tsx summaryCard/card) — cosmetic.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Settings save -> back to Home",
+        "issue": "Home only calls load() once in useEffect on mount. After saving team_name/team_emoji (and pix) in /settings and returning via router.back(), the header still shows the previous values until a manual pull-to-refresh or full page reload. Backend persistence is verified via GET /api/settings/team. Fix: use useFocusEffect from expo-router to re-run load() when the Home screen regains focus (or subscribe to navigation focus events).",
+        "affected_testIDs": ["team-name", "week-label", "summary-card"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow props", "issue": "React Native Web deprecation warning: 'shadow*' style props are deprecated. Use 'boxShadow'. Reference: /app/frontend/app/index.tsx:573-577 (summaryCard) and /app/frontend/app/index.tsx:646-650 (card)."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "In /app/frontend/app/index.tsx replace the mount-only useEffect with useFocusEffect(useCallback(() => { load(); }, [load])) from expo-router so the Home refreshes on return from /settings (and any other screen that mutates team/pix data). Same pattern should be applied where relevant.",
+    "Migrate shadow* style props to boxShadow in /app/frontend/app/index.tsx summaryCard (lines 573-577) and card (lines 646-650) to silence the deprecation warning on web."
+  ],
+  "critical_code_review_comments": [
+    "server.py list_weeks correctly batches attendance + players fetches (3 queries total) — N+1 eliminated.",
+    "server.py player_history reads all weeks + player's attendances once (2 queries) — N+1 eliminated.",
+    "Both new endpoints /api/settings/team GET/PUT correctly upsert with id='team' and exclude _id via projection.",
+    "TeamSettings pydantic model has proper defaults so PUT with partial body still works.",
+    "Home shareWhatsApp/inviteFriends now include team_name+team_emoji at the top of messages with sensible fallbacks."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "seed_data_creation": "None persisted. Test player TEST_* rows were cleaned up in test teardown; team settings were reset to empty via PUT during cleanup.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend fully green (13/13). Frontend Home + Settings + navigation verified. The only integration issue found is Home not re-fetching on focus after Settings save (fix with useFocusEffect). Seed data: players João Silva (mensalista), Pedro Costa (convidado), Ricardo x2 mensalistas, and 2 weeks exist. testIDs available: team-name, week-label, summary-card, summary-total, invite-friends-btn, open-weeks-btn, open-settings-btn, share-whatsapp-btn, add-player-btn, filter-chip-{key}, player-card-{id}, toggle-attend-{id}, toggle-churras-{id}, toggle-paid-{id}, open-history-{id}, open-pix-{id}, input-team-name, emoji-{e}, input-pix-key, input-holder, input-bank, save-settings-btn, back-btn.",
+  "rca_of_issue": "Home stale after Settings save — Root cause: in /app/frontend/app/index.tsx the load() function is only invoked inside a one-shot useEffect (line ~64) and via onRefresh. When user does router.push('/settings') and later router.back(), Home remains mounted but never re-runs load(), so setTeam/setPix state is not refreshed even though backend was updated. Reproduction: open /, tap settings, change team name/emoji, tap Save, tap back arrow — team-name header still shows previous value. Verified via curl /api/settings/team that backend was updated correctly. Mitigation: replace or complement the useEffect with useFocusEffect from expo-router (or add a navigation focus listener) to re-run load() every time Home regains focus."
+}

@@ -3,7 +3,7 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, Attendance, CurrentWeek, Player, PixSettings } from "@/src/api";
+import { api, Attendance, CurrentWeek, Player, PixSettings, TeamSettings } from "@/src/api";
 import { PRICES, brl, colors, radius, spacing } from "@/src/theme";
 
 const HERO_URL =
@@ -41,14 +41,21 @@ export default function Home() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [current, setCurrent] = useState<CurrentWeek | null>(null);
   const [pix, setPix] = useState<PixSettings>({ pix_key: "", holder_name: "", bank: "" });
+  const [team, setTeam] = useState<TeamSettings>({ team_name: "", team_emoji: "" });
   const [filter, setFilter] = useState<FilterKey>("todos");
 
   const load = useCallback(async () => {
     try {
-      const [pl, cw, px] = await Promise.all([api.listPlayers(), api.getCurrentWeek(), api.getPix()]);
+      const [pl, cw, px, tm] = await Promise.all([
+        api.listPlayers(),
+        api.getCurrentWeek(),
+        api.getPix(),
+        api.getTeam(),
+      ]);
       setPlayers(pl);
       setCurrent(cw);
       setPix(px);
+      setTeam(tm);
     } catch (e) {
       console.log("load error", e);
     }
@@ -61,6 +68,12 @@ export default function Home() {
       setLoading(false);
     })();
   }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -120,7 +133,9 @@ export default function Home() {
   const shareWhatsApp = async () => {
     if (!current) return;
     const lines: string[] = [];
-    lines.push(`*⚽ Lista Futebol - ${current.week.label}*`);
+    const teamLabel = team.team_name || "Lista Futebol";
+    const emoji = team.team_emoji || "⚽";
+    lines.push(`*${emoji} ${teamLabel} - ${current.week.label}*`);
     lines.push("");
     const mensalistas = players.filter(
       (p) => p.type === "mensalista" && attendanceMap.get(p.id)?.attending,
@@ -168,8 +183,10 @@ export default function Home() {
 
   const inviteFriends = async () => {
     if (!APP_URL) return;
+    const teamLabel = team.team_name || "nossa lista de futebol";
+    const emoji = team.team_emoji || "⚽";
     const msg =
-      `⚽ *Fala, galera!* Entra no app da nossa lista de futebol:\n\n` +
+      `${emoji} *Fala, galera!* Entra no app da ${teamLabel}:\n\n` +
       `👉 ${APP_URL}\n\n` +
       `Lá você confirma presença, marca o churrasco 🍖 e paga via Pix. Simples assim!`;
     const url = `whatsapp://send?text=${encodeURIComponent(msg)}`;
@@ -204,6 +221,7 @@ export default function Home() {
             setFilter={setFilter}
             confirmed={current?.summary.count_confirmados || 0}
             total={players.length}
+            team={team}
           />
         }
         ListEmptyComponent={
@@ -264,6 +282,7 @@ function Header({
   setFilter,
   confirmed,
   total,
+  team,
 }: {
   weekLabel: string;
   summary: any;
@@ -274,7 +293,10 @@ function Header({
   setFilter: (f: FilterKey) => void;
   confirmed: number;
   total: number;
+  team: TeamSettings;
 }) {
+  const teamName = team.team_name || "Turma do Futebol";
+  const teamEmoji = team.team_emoji || "⚽";
   return (
     <View>
       <View style={styles.hero}>
@@ -285,7 +307,11 @@ function Header({
         />
         <SafeAreaView edges={["top"]} style={styles.heroContent}>
           <View style={styles.heroTopRow}>
-            <View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.teamRow}>
+                <Text style={styles.teamEmoji}>{teamEmoji}</Text>
+                <Text style={styles.teamName} numberOfLines={1} testID="team-name">{teamName}</Text>
+              </View>
               <Text style={styles.heroKicker}>Semana atual</Text>
               <Text style={styles.heroTitle} testID="week-label">{weekLabel}</Text>
             </View>
@@ -529,8 +555,11 @@ const styles = StyleSheet.create({
 
   hero: { minHeight: 340, backgroundColor: colors.brand, overflow: "hidden" },
   heroContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, paddingTop: spacing.sm },
-  heroTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.sm },
-  heroKicker: { color: "rgba(255,255,255,0.85)", fontSize: 12, letterSpacing: 1, textTransform: "uppercase" },
+  heroTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: spacing.sm, gap: spacing.md },
+  teamRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
+  teamEmoji: { fontSize: 22 },
+  teamName: { color: "#fff", fontSize: 15, fontWeight: "800", flexShrink: 1 },
+  heroKicker: { color: "rgba(255,255,255,0.85)", fontSize: 11, letterSpacing: 1, textTransform: "uppercase" },
   heroTitle: { color: "#fff", fontSize: 22, fontWeight: "800", marginTop: 2 },
   heroActions: { flexDirection: "row", gap: spacing.sm },
   iconBtn: {

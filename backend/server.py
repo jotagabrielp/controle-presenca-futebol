@@ -71,6 +71,11 @@ class PixSettings(BaseModel):
     bank: str = ""
 
 
+class TeamSettings(BaseModel):
+    team_name: str = ""
+    team_emoji: str = ""
+
+
 # ---------- Helpers ----------
 def _monday_of(d: date) -> date:
     return d - timedelta(days=d.weekday())
@@ -190,11 +195,64 @@ async def get_current_week():
 
 @api_router.get("/weeks")
 async def list_weeks():
-    docs = await db.weeks.find({}, {"_id": 0}).sort("week_start", -1).to_list(500)
+    weeks_docs = await db.weeks.find({}, {"_id": 0}).sort("week_start", -1).to_list(500)
+    if not weeks_docs:
+        return []
+    week_ids = [w["id"] for w in weeks_docs]
+    all_att = await db.attendance.find(
+        {"week_id": {"$in": week_ids}, "attending": True}, {"_id": 0}
+    ).to_list(20000)
+    player_ids = list({a["player_id"] for a in all_att})
+    players_by_id: dict = {}
+    if player_ids:
+        cursor = db.players.find({"id": {"$in": player_ids}}, {"_id": 0})
+        async for p in cursor:
+            players_by_id[p["id"]] = p
+
+    per_week: dict = {wid: [] for wid in week_ids}
+    for a in all_att:
+        if a["week_id"] in per_week:
+            per_week[a["week_id"]].append(a)
+
     out = []
-    for d in docs:
-        summary = await _summary_for_week(d["id"])
-        out.append({"week": d, "summary": summary})
+    for w in weeks_docs:
+        atts = per_week.get(w["id"], [])
+        tm = tc = tch = tp = cm = cc = cch = cp = 0
+        for a in atts:
+            p = players_by_id.get(a["player_id"])
+            if not p:
+                continue
+            base = PRICE_MENSALISTA if p["type"] == "mensalista" else PRICE_CONVIDADO
+            churras = PRICE_CHURRASCO if a.get("churrasco") else 0
+            if p["type"] == "mensalista":
+                tm += PRICE_MENSALISTA
+                cm += 1
+            else:
+                tc += PRICE_CONVIDADO
+                cc += 1
+            if a.get("churrasco"):
+                tch += PRICE_CHURRASCO
+                cch += 1
+            if a.get("paid"):
+                tp += base + churras
+                cp += 1
+        total_arr = tm + tc + tch
+        out.append({
+            "week": w,
+            "summary": {
+                "total_mensalistas": tm,
+                "total_convidados": tc,
+                "total_churrasco": tch,
+                "total_arrecadado": total_arr,
+                "total_pago": tp,
+                "total_pendente": total_arr - tp,
+                "count_mensalistas": cm,
+                "count_convidados": cc,
+                "count_churrasco": cch,
+                "count_pagos": cp,
+                "count_confirmados": cm + cc,
+            },
+        })
     return out
 
 
@@ -262,9 +320,11 @@ async def player_history(player_id: str):
     if not player:
         raise HTTPException(status_code=404, detail="Jogador não encontrado")
     weeks = await db.weeks.find({}, {"_id": 0}).sort("week_start", -1).to_list(500)
+    atts = await db.attendance.find({"player_id": player_id}, {"_id": 0}).to_list(1000)
+    by_week = {a["week_id"]: a for a in atts}
     result = []
     for w in weeks:
-        a = await db.attendance.find_one({"week_id": w["id"], "player_id": player_id}, {"_id": 0})
+        a = by_week.get(w["id"])
         result.append({
             "week": w,
             "attending": bool(a and a.get("attending")),
@@ -310,6 +370,33 @@ async def update_pix_settings(inp: PixSettings):
         upsert=True,
     )
     return {"pix_key": inp.pix_key, "holder_name": inp.holder_name, "bank": inp.bank}
+
+
+# Team Settings
+@api_router.get("/settings/team")
+async def get_team_settings():
+    doc = await db.settings.find_one({"id": "team"}, {"_id": 0})
+    if not doc:
+        return {"team_name": "", "team_emoji": ""}
+    return {
+        "team_name": doc.get("team_name", ""),
+        "team_emoji": doc.get("team_emoji", ""),
+    }
+
+
+@api_router.put("/settings/team")
+async def update_team_settings(inp: TeamSettings):
+    await db.settings.update_one(
+        {"id": "team"},
+        {"$set": {
+            "id": "team",
+            "team_name": inp.team_name.strip(),
+            "team_emoji": inp.team_emoji.strip(),
+            "updated_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+    return {"team_name": inp.team_name, "team_emoji": inp.team_emoji}
 
 
 app.include_router(api_router)

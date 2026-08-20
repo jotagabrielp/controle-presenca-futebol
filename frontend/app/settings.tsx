@@ -18,20 +18,26 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/src/api";
 import { PRICES, brl, colors, radius, spacing } from "@/src/theme";
 
+const EMOJIS = ["⚽", "🏆", "🔥", "💪", "🥅", "🏟️", "🍺", "🍖", "⭐", "🎯"];
+
 export default function Settings() {
   const router = useRouter();
   const [pixKey, setPixKey] = useState("");
   const [holder, setHolder] = useState("");
   const [bank, setBank] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [teamEmoji, setTeamEmoji] = useState("⚽");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.getPix().then((p) => {
+    Promise.all([api.getPix(), api.getTeam()]).then(([p, t]) => {
       setPixKey(p.pix_key);
       setHolder(p.holder_name);
       setBank(p.bank);
+      setTeamName(t.team_name);
+      setTeamEmoji(t.team_emoji || "⚽");
       setLoading(false);
     });
   }, []);
@@ -39,7 +45,10 @@ export default function Settings() {
   const save = async () => {
     setSaving(true);
     try {
-      await api.updatePix({ pix_key: pixKey.trim(), holder_name: holder.trim(), bank: bank.trim() });
+      await Promise.all([
+        api.updatePix({ pix_key: pixKey.trim(), holder_name: holder.trim(), bank: bank.trim() }),
+        api.updateTeam({ team_name: teamName.trim(), team_emoji: teamEmoji.trim() }),
+      ]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
@@ -68,10 +77,40 @@ export default function Settings() {
         </View>
 
         <ScrollView contentContainerStyle={styles.body}>
-          <Text style={styles.sectionKicker}>Chave Pix da turma</Text>
-          <Text style={styles.sectionSub}>
-            Todos verão essa chave ao pagar sua mensalidade, convite ou churrasco.
-          </Text>
+          <Text style={styles.sectionKicker}>Identidade da turma</Text>
+          <Text style={styles.sectionSub}>Nome e emoji que aparecem no topo do app e na lista compartilhada.</Text>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Nome da turma</Text>
+            <TextInput
+              testID="input-team-name"
+              value={teamName}
+              onChangeText={setTeamName}
+              placeholder="Ex: Fut dos Amigos - Quarta 21h"
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+              maxLength={40}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Emoji do time</Text>
+            <View style={styles.emojiRow}>
+              {EMOJIS.map((e) => (
+                <Pressable
+                  key={e}
+                  testID={`emoji-${e}`}
+                  onPress={() => setTeamEmoji(e)}
+                  style={[styles.emojiBtn, teamEmoji === e && styles.emojiBtnActive]}
+                >
+                  <Text style={styles.emojiText}>{e}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <Text style={[styles.sectionKicker, { marginTop: spacing.xl }]}>Chave Pix da turma</Text>
+          <Text style={styles.sectionSub}>Todos verão essa chave ao pagar sua mensalidade, convite ou churrasco.</Text>
 
           <View style={styles.field}>
             <Text style={styles.label}>Chave Pix</Text>
@@ -120,7 +159,7 @@ export default function Settings() {
 
         <View style={styles.footer}>
           <Pressable
-            testID="save-pix-btn"
+            testID="save-settings-btn"
             style={[styles.saveBtn, saved && { backgroundColor: colors.success }]}
             onPress={save}
             disabled={saving}
@@ -185,6 +224,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.onSurface,
   },
+  emojiRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  emojiBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emojiBtnActive: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
+  emojiText: { fontSize: 22 },
   priceCard: {
     marginTop: spacing.lg,
     padding: spacing.md,
