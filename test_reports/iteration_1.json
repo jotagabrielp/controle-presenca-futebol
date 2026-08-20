@@ -1,0 +1,39 @@
+{
+  "summary": "Post-fix regression testing after METRO_CACHE_ROOT quoting and LSApplicationQueriesSchemes addition. Backend: 7/7 pytest tests pass (root, players list/create/delete, weeks/current, pix get/put persist, attendance upsert flow including clearing on unattend). Frontend: Metro bundler compiles cleanly with the quoted METRO_CACHE_ROOT; home screen loads on mobile viewport (390x844) with all critical testIDs visible (summary-card, week-label, summary-total, invite-friends-btn, open-weeks-btn, open-settings-btn, share-whatsapp-btn, add-player-btn). Navigation to /add-player, /settings, /pix, /weeks all succeed. Pix screen correctly shows 'Chave Pix não cadastrada' when key is empty. app.json validated with LSApplicationQueriesSchemes: ['whatsapp']. No red screen errors, no page errors. Minor: input fields in /add-player and /settings do not expose testIDs (player-name-input, pix-key-input, save-pix-btn, pix-qr) which prevented deep form-flow automation but screens render properly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "add-player screen", "issue": "TextInput 'Nome do jogador' lacks testID (expected 'player-name-input'). Save button also missing testID. Screen renders correctly.", "testID": "player-name-input / save-player-btn (missing)", "priority": "LOW"},
+      {"component": "settings screen", "issue": "Pix TextInputs and Save button lack testIDs (expected 'pix-key-input', 'save-pix-btn'). Screen renders correctly with proper form.", "testID": "pix-key-input / save-pix-btn (missing)", "priority": "LOW"},
+      {"component": "pix screen", "issue": "QR code container lacks testID (expected 'pix-qr'). Correctly shows empty state when no Pix key.", "testID": "pix-qr (missing)", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow props", "issue": "React Native Web deprecation warning: 'shadow*' style props are deprecated. Use 'boxShadow'. Repeated in console. Reference: /app/frontend/app/index.tsx (styles.summaryCard, styles.card) and likely other screens using shadowColor/shadowOpacity/shadowOffset/shadowRadius."},
+      {"component": "expo versions", "issue": "expo@54.0.36 (expected ~54.0.37) and expo-constants@18.0.13 (expected ~18.0.14) are slightly behind. Non-blocking; can be updated via `npx expo install --check`."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Add testIDs to form inputs/buttons in /app/frontend/app/add-player.tsx (player-name-input, save-player-btn), /app/frontend/app/settings.tsx (pix-key-input, holder-name-input, bank-input, save-pix-btn), /app/frontend/app/pix.tsx (pix-qr) for easier E2E automation.",
+    "Migrate shadow* style props to boxShadow in StyleSheet.create objects across index.tsx (summaryCard, card) and any other screens using them to remove the deprecation warning on web.",
+    "Optional: run `cd /app/frontend && npx expo install --check` to align expo and expo-constants to expected patch versions."
+  ],
+  "critical_code_review_comments": [
+    "server.py excludes MongoDB _id properly (via projection {'_id': 0}) - good.",
+    "All API URLs come from env (EXPO_PUBLIC_BACKEND_URL / MONGO_URL) - no hardcoding.",
+    "app.json now includes LSApplicationQueriesSchemes: ['whatsapp'] under ios.infoPlist - correct for whatsapp:// canOpenURL on iOS builds.",
+    ".env METRO_CACHE_ROOT is now quoted correctly and Metro bundler starts without errors."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "seed_data_creation": "None persisted. All test-created players/pix settings were cleaned up in test teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend fully green. Frontend home + navigation verified. If deeper form-flow testing is needed later, main agent should add testIDs to the input fields listed in action_items. shadow* deprecation warnings are cosmetic only.",
+  "rca_of_issue": "N/A - regression validated the two deployment-agent fixes (METRO_CACHE_ROOT quoting in frontend/.env line 5, and LSApplicationQueriesSchemes in app.json ios.infoPlist). Both fixes verified working."
+}

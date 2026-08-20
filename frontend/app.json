@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.squadchecker.a89gfi"
+      "bundleIdentifier": "com.emergent.squadchecker.a89gfi",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["whatsapp"]
+      }
     },
     "android": {
       "adaptiveIcon": {

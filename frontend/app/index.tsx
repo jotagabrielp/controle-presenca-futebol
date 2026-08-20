@@ -8,7 +8,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
