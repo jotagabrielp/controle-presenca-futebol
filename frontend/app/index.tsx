@@ -24,6 +24,8 @@ import { PRICES, brl, colors, radius, spacing } from "@/src/theme";
 const HERO_URL =
   "https://images.unsplash.com/photo-1459865264687-595d652de67e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxmb290YmFsbCUyMGZpZWxkJTIwcGl0Y2glMjBncmFzc3xlbnwwfHx8fDE3ODMwMDEzMTR8MA&ixlib=rb-4.1.0&q=85";
 
+const APP_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+
 type FilterKey = "todos" | "mensalista" | "convidado";
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "todos", label: "Todos" },
@@ -155,10 +157,26 @@ export default function Home() {
       lines.push(`*Pix:* ${pix.pix_key}`);
       if (pix.holder_name) lines.push(`_${pix.holder_name}_`);
     }
+    if (APP_URL) {
+      lines.push("");
+      lines.push(`👉 Confirme sua presença no app: ${APP_URL}`);
+    }
     const url = `whatsapp://send?text=${encodeURIComponent(lines.join("\n"))}`;
     const can = await Linking.canOpenURL(url);
     if (can) Linking.openURL(url);
     else Linking.openURL(`https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`);
+  };
+
+  const inviteFriends = async () => {
+    if (!APP_URL) return;
+    const msg =
+      `⚽ *Fala, galera!* Entra no app da nossa lista de futebol:\n\n` +
+      `👉 ${APP_URL}\n\n` +
+      `Lá você confirma presença, marca o churrasco 🍖 e paga via Pix. Simples assim!`;
+    const url = `whatsapp://send?text=${encodeURIComponent(msg)}`;
+    const can = await Linking.canOpenURL(url);
+    if (can) Linking.openURL(url);
+    else Linking.openURL(`https://wa.me/?text=${encodeURIComponent(msg)}`);
   };
 
   if (loading) {
@@ -182,6 +200,7 @@ export default function Home() {
             summary={current?.summary}
             onSettings={() => router.push("/settings")}
             onWeeks={() => router.push("/weeks")}
+            onInvite={inviteFriends}
             filter={filter}
             setFilter={setFilter}
             confirmed={current?.summary.count_confirmados || 0}
@@ -241,6 +260,7 @@ function Header({
   summary,
   onSettings,
   onWeeks,
+  onInvite,
   filter,
   setFilter,
   confirmed,
@@ -250,6 +270,7 @@ function Header({
   summary: any;
   onSettings: () => void;
   onWeeks: () => void;
+  onInvite: () => void;
   filter: FilterKey;
   setFilter: (f: FilterKey) => void;
   confirmed: number;
@@ -270,6 +291,9 @@ function Header({
               <Text style={styles.heroTitle} testID="week-label">{weekLabel}</Text>
             </View>
             <View style={styles.heroActions}>
+              <Pressable testID="invite-friends-btn" style={styles.iconBtn} onPress={onInvite}>
+                <Ionicons name="share-social-outline" size={20} color="#fff" />
+              </Pressable>
               <Pressable testID="open-weeks-btn" style={styles.iconBtn} onPress={onWeeks}>
                 <Ionicons name="calendar-outline" size={20} color="#fff" />
               </Pressable>
