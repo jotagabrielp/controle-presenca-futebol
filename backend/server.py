@@ -32,12 +32,29 @@ class Player(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     type: Literal["mensalista", "convidado"]
+    monthly_fee: Optional[float] = None  # override; None = usa PRICE_MENSALISTA
+    churrasco_fee: Optional[float] = None  # override; None = usa PRICE_CHURRASCO
+    guest_fee: Optional[float] = None  # override para convidado; None = usa PRICE_CONVIDADO
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class PlayerCreate(BaseModel):
     name: str
     type: Literal["mensalista", "convidado"]
+    monthly_fee: Optional[float] = None
+    churrasco_fee: Optional[float] = None
+    guest_fee: Optional[float] = None
+
+
+class PlayerUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[Literal["mensalista", "convidado"]] = None
+    monthly_fee: Optional[float] = None
+    churrasco_fee: Optional[float] = None
+    guest_fee: Optional[float] = None
+    clear_monthly_fee: Optional[bool] = None
+    clear_churrasco_fee: Optional[bool] = None
+    clear_guest_fee: Optional[bool] = None
 
 
 class Week(BaseModel):
@@ -145,6 +162,21 @@ def _mensalista_blocked(today: date, paid_current_month: bool) -> bool:
     return today > deadline
 
 
+def _price_monthly(p: dict) -> float:
+    v = p.get("monthly_fee")
+    return float(v) if v is not None else float(PRICE_MENSALISTA)
+
+
+def _price_churrasco(p: dict) -> float:
+    v = p.get("churrasco_fee")
+    return float(v) if v is not None else float(PRICE_CHURRASCO)
+
+
+def _price_guest(p: dict) -> float:
+    v = p.get("guest_fee")
+    return float(v) if v is not None else float(PRICE_CONVIDADO)
+
+
 async def _get_or_create_current_week() -> Week:
     today = datetime.now(timezone.utc).date()
     monday = _monday_of(today)
@@ -193,6 +225,7 @@ async def _summary_for_week(week_id: str) -> dict:
         if not p:
             continue
         is_paid = bool(a.get("paid"))
+        churras_price = _price_churrasco(p)
         if p["type"] == "mensalista":
             paid_month = bool(paid_map.get(p["id"]))
             if _mensalista_blocked(today, paid_month):
@@ -203,16 +236,16 @@ async def _summary_for_week(week_id: str) -> dict:
             if not is_paid:
                 count_convidados_pendentes += 1
                 continue
-            total_convidados += PRICE_CONVIDADO
+            total_convidados += _price_guest(p)
             count_convidados += 1
         # aqui só chega quem está oficialmente na lista
-        churras = PRICE_CHURRASCO if a.get("churrasco") else 0
         if a.get("churrasco"):
-            total_churrasco += PRICE_CHURRASCO
+            total_churrasco += churras_price
             count_churrasco += 1
         if is_paid:
-            base_paid = PRICE_CONVIDADO if p["type"] == "convidado" else 0
-            total_pago += base_paid + churras
+            base_paid = _price_guest(p) if p["type"] == "convidado" else 0
+            churras_paid = churras_price if a.get("churrasco") else 0
+            total_pago += base_paid + churras_paid
             count_pagos += 1
 
     total_arrecadado = total_convidados + total_churrasco
@@ -251,9 +284,52 @@ async def create_player(inp: PlayerCreate):
     name = inp.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Nome obrigatório")
-    p = Player(name=name, type=inp.type)
+    p = Player(
+        name=name,
+        type=inp.type,
+        monthly_fee=inp.monthly_fee,
+        churrasco_fee=inp.churrasco_fee,
+        guest_fee=inp.guest_fee,
+    )
     await db.players.insert_one(p.model_dump())
     return p
+
+
+@api_router.put("/players/{player_id}", response_model=Player)
+async def update_player(player_id: str, inp: PlayerUpdate):
+    existing = await db.players.find_one({"id": player_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Jogador não encontrado")
+    update: dict = {}
+    if inp.name is not None:
+        n = inp.name.strip()
+        if not n:
+            raise HTTPException(status_code=400, detail="Nome obrigatório")
+        update["name"] = n
+    if inp.type is not None:
+        update["type"] = inp.type
+    if inp.clear_monthly_fee:
+        update["monthly_fee"] = None
+    elif inp.monthly_fee is not None:
+        if inp.monthly_fee < 0:
+            raise HTTPException(status_code=400, detail="Valor inválido")
+        update["monthly_fee"] = float(inp.monthly_fee)
+    if inp.clear_churrasco_fee:
+        update["churrasco_fee"] = None
+    elif inp.churrasco_fee is not None:
+        if inp.churrasco_fee < 0:
+            raise HTTPException(status_code=400, detail="Valor inválido")
+        update["churrasco_fee"] = float(inp.churrasco_fee)
+    if inp.clear_guest_fee:
+        update["guest_fee"] = None
+    elif inp.guest_fee is not None:
+        if inp.guest_fee < 0:
+            raise HTTPException(status_code=400, detail="Valor inválido")
+        update["guest_fee"] = float(inp.guest_fee)
+    if update:
+        await db.players.update_one({"id": player_id}, {"$set": update})
+    doc = await db.players.find_one({"id": player_id}, {"_id": 0})
+    return Player(**doc)
 
 
 @api_router.delete("/players/{player_id}")
@@ -316,6 +392,7 @@ async def list_weeks():
             if not p:
                 continue
             is_paid = bool(a.get("paid"))
+            churras_price = _price_churrasco(p)
             if p["type"] == "mensalista":
                 paid_month = (p["id"], month) in paid_set
                 if _mensalista_blocked(week_monday, paid_month):
@@ -326,15 +403,15 @@ async def list_weeks():
                 if not is_paid:
                     ccp += 1
                     continue
-                tc += PRICE_CONVIDADO
+                tc += _price_guest(p)
                 cc += 1
-            churras = PRICE_CHURRASCO if a.get("churrasco") else 0
             if a.get("churrasco"):
-                tch += PRICE_CHURRASCO
+                tch += churras_price
                 cch += 1
             if is_paid:
-                base_paid = PRICE_CONVIDADO if p["type"] == "convidado" else 0
-                tp += base_paid + churras
+                base_paid = _price_guest(p) if p["type"] == "convidado" else 0
+                churras_paid = churras_price if a.get("churrasco") else 0
+                tp += base_paid + churras_paid
                 cp += 1
         total_arr = tc + tch
         out.append({
@@ -461,16 +538,22 @@ async def get_monthly_current():
         async for mp in cursor:
             paid_map[mp["player_id"]] = mp
     items = []
+    total_pago = 0.0
+    total_previsto = 0.0
     for p in mensalistas:
         mp = paid_map.get(p["id"])
         is_paid = bool(mp and mp.get("paid"))
+        fee = _price_monthly(p)
         items.append({
             "player": p,
             "paid": is_paid,
             "paid_at": (mp.get("paid_at") if mp else None),
             "blocked": _mensalista_blocked(today, is_paid),
+            "monthly_fee": fee,
         })
-    total_pago = sum(1 for i in items if i["paid"]) * PRICE_MENSALISTA
+        total_previsto += fee
+        if is_paid:
+            total_pago += fee
     return {
         "month": month,
         "deadline": deadline.isoformat(),
@@ -480,7 +563,7 @@ async def get_monthly_current():
         "count_pagos": sum(1 for i in items if i["paid"]),
         "count_pendentes": sum(1 for i in items if not i["paid"]),
         "total_pago": total_pago,
-        "total_previsto": len(items) * PRICE_MENSALISTA,
+        "total_previsto": total_previsto,
     }
 
 

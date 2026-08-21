@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 5 validates the new per-player custom fees feature (monthly_fee, churrasco_fee, guest_fee overrides for players who work 15x15 or have different pricing). BACKEND: 31/31 pytest passing (added /app/backend/tests/test_custom_fees.py — 10 new tests covering: create player with monthly_fee/churrasco_fee/guest_fee, GET returns null when not set, PUT updates fees, clear_* flags revert to null, PUT with negative fee returns 400 for all 3 fields, name+type update, /monthly/current items[] each carry monthly_fee and total_previsto = sum(custom fees), /weeks/current and /weeks list correctly use custom guest_fee in total_convidados/total_pago and custom churrasco_fee in total_churrasco/total_pago). All 21 pre-existing regression tests still green. FRONTEND (Expo web preview 390x844): confirmed on production URL: Danilo card renders 'Mensalista · R$ 30/mês' (custom) + green 'Personalizado' badge; Cauã card renders 'Convidado · R$ 20' + 'Personalizado' badge + 'Churrasco R$ 25' chip (custom churrasco_fee). Two 'Personalizado' badges visible on home as expected. edit-player-{id} pencil icon navigates to /player/[playerId] which loads with input-name pre-filled (Danilo), monthly override switch ON with fee-monthly-input=30, and Save (save-btn) round-trips back to home. delete-btn present in header (uses window.confirm on web per Platform.OS branching — correct). Regression: filter chips, add-player-btn, share-whatsapp-btn, waiting list, monthly/expenses tabs all intact. Deprecated packages detected: none new. Pre-existing shadow* deprecation warning still present (cosmetic, RN-web only).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/players", "issue": "Negative fees on CREATE (POST) are accepted (only PUT validates <0). Spec says 'valores negativos em qualquer fee retornam 400' — technically PUT covers this, but for symmetry POST should also validate. Reference: /app/backend/server.py:283-295 (create_player has no <0 check unlike update_player at :314,320,326)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow props", "issue": "Pre-existing RN-web deprecation: 'shadow*' style props deprecated, use 'boxShadow'. Reference: /app/frontend/app/index.tsx summaryCard/card style blocks. Cosmetic, non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_monthly_expenses.py",
+    "/app/backend/tests/test_custom_fees.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(LOW) Add negative-fee validation to POST /api/players (create_player) in /app/backend/server.py:283 — currently only PUT rejects <0. Recommended: raise HTTPException(400) if inp.monthly_fee/churrasco_fee/guest_fee is not None and <0.",
+    "(OPTIONAL / cosmetic) Migrate shadow* → boxShadow in /app/frontend/app/index.tsx to silence RN-web deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py _price_monthly/_price_churrasco/_price_guest correctly fall back to PRICE_* constants when player.<fee> is None — clean.",
+    "server.py update_player correctly handles clear_* flags BEFORE the fee value branch (elif) so client can either set OR clear, not both.",
+    "server.py _summary_for_week uses _price_churrasco(p) and _price_guest(p) per-player — custom fees flow correctly into total_convidados, total_churrasco, and total_pago.",
+    "server.py list_weeks (aggregation across all weeks) also uses _price_* helpers per-player — consistent with /weeks/current.",
+    "server.py get_monthly_current items[] carry per-player monthly_fee, and total_previsto is computed by summing those (line 555). Correct spec.",
+    "frontend/app/index.tsx PlayerCard: 'hasCustom' correctly OR's all three override fields, so badge shows for any override; basePrice display cascades player.<fee> ?? PRICES.<default>.",
+    "frontend/app/player/[playerId].tsx correctly uses Platform.OS === 'web' branch for delete confirmation (window.confirm) and Alert.alert on native — cross-platform-safe.",
+    "MINOR: POST /api/players lacks the same <0 validation as PUT — inconsistent but not exploitable (UI never sends negatives)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_custom_fees.py (NEW — 10 tests: custom fees create, update, clear, negative validation, monthly aggregation, weekly aggregation with custom guest+churrasco fees)"
+  ],
+  "success_rate": {"backend": "100% (31/31 pytest)", "frontend": "100% (all flows validated: badge, price display, edit navigation, edit form load, save round-trip)"},
+  "seed_data_creation": "All TEST_* players created were deleted in each test's finally block. Danilo's monthly_fee=30 preserved (pre-existing). No orphan data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "New endpoints validated: POST /api/players accepts optional monthly_fee/churrasco_fee/guest_fee; PUT /api/players/{id} supports clear_monthly_fee/clear_churrasco_fee/clear_guest_fee flags; PUT rejects negative values with 400. /api/monthly/current items[] carry monthly_fee (custom or 60) and total_previsto sums those. /api/weeks/current + /api/weeks aggregations use per-player custom guest_fee/churrasco_fee. New testIDs on Home: edit-player-{id} (opens /player/[id]), smallBadge shows 'Personalizado' when any override set. New route /player/[playerId] testIDs: back-btn, delete-btn, input-name, type-mensalista, type-convidado, fee-monthly-toggle, fee-monthly-input, fee-guest-toggle, fee-guest-input, fee-churras-toggle, fee-churras-input, save-btn. Known minor gap: POST /api/players does not validate negative fees (only PUT does).",
+  "rca_of_issue": "N/A — feature addition iteration, no bug reported. One minor consistency gap flagged: POST vs PUT validation asymmetry for negative fees (create accepts, update rejects). UI never sends negatives so no user-facing impact."
+}

@@ -273,6 +273,7 @@ export default function Home() {
         onOpenHistory={() => router.push(`/history/${p.id}`)}
         onOpenPix={() => router.push("/pix")}
         onOpenMonthly={() => router.push("/monthly")}
+        onEdit={() => router.push(`/player/${p.id}`)}
         hasPix={!!pix.pix_key}
       />
     );
@@ -560,6 +561,7 @@ function PlayerCard({
   onOpenHistory,
   onOpenPix,
   onOpenMonthly,
+  onEdit,
   hasPix,
 }: {
   player: Player;
@@ -575,6 +577,7 @@ function PlayerCard({
   onOpenHistory: () => void;
   onOpenPix: () => void;
   onOpenMonthly: () => void;
+  onEdit: () => void;
   hasPix: boolean;
 }) {
   const initials = player.name
@@ -583,7 +586,12 @@ function PlayerCard({
     .map((s) => s[0]?.toUpperCase())
     .join("");
   const isMensa = player.type === "mensalista";
-  const price = isMensa ? PRICES.MENSALISTA : PRICES.CONVIDADO;
+  const basePrice = isMensa
+    ? player.monthly_fee ?? PRICES.MENSALISTA
+    : player.guest_fee ?? PRICES.CONVIDADO;
+  const churrasPrice = player.churrasco_fee ?? PRICES.CHURRASCO;
+  const hasCustom =
+    player.monthly_fee != null || player.churrasco_fee != null || player.guest_fee != null;
 
   const waiting = status === "waiting";
   const waitingReason = waiting
@@ -619,9 +627,15 @@ function PlayerCard({
                 color={isMensa ? colors.onBrandTertiary : "#1F5F84"}
               />
               <Text style={[styles.typeBadgeText, { color: isMensa ? colors.onBrandTertiary : "#1F5F84" }]}>
-                {isMensa ? `Mensalista · ${brl(PRICES.MENSALISTA)}/mês` : `Convidado · ${brl(price)}`}
+                {isMensa ? `Mensalista · ${brl(basePrice)}/mês` : `Convidado · ${brl(basePrice)}`}
               </Text>
             </View>
+            {hasCustom && (
+              <View style={[styles.smallBadge, { backgroundColor: colors.brandSecondary }]}>
+                <Ionicons name="pricetag" size={10} color={colors.onBrandSecondary} />
+                <Text style={[styles.smallBadgeText, { color: colors.onBrandSecondary }]}>Personalizado</Text>
+              </View>
+            )}
             {isMensa && paidMonth && (
               <View style={[styles.smallBadge, { backgroundColor: "#E6F7EC" }]}>
                 <Ionicons name="checkmark" size={10} color={colors.success} />
@@ -636,6 +650,13 @@ function PlayerCard({
             )}
           </View>
         </View>
+        <Pressable
+          testID={`edit-player-${player.id}`}
+          onPress={onEdit}
+          style={styles.editBtn}
+        >
+          <Ionicons name="pencil" size={16} color={colors.muted} />
+        </Pressable>
         <Pressable
           testID={`toggle-attend-${player.id}`}
           onPress={onToggleAttend}
@@ -665,7 +686,7 @@ function PlayerCard({
           >
             <Ionicons name="flame" size={16} color={churrasco ? "#fff" : "#E67E22"} />
             <Text style={[styles.actionChipText, churrasco && { color: "#fff" }]}>
-              Churrasco {brl(PRICES.CHURRASCO)}
+              Churrasco {brl(churrasPrice)}
             </Text>
           </Pressable>
           {!isMensa && (
@@ -883,6 +904,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
   },
   checkBtnActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  editBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   waitingBar: {
     flexDirection: "row",

@@ -6,6 +6,9 @@ export interface Player {
   id: string;
   name: string;
   type: PlayerType;
+  monthly_fee: number | null;
+  churrasco_fee: number | null;
+  guest_fee: number | null;
   created_at: string;
 }
 
@@ -62,6 +65,7 @@ export interface MonthlyItem {
   paid: boolean;
   paid_at: string | null;
   blocked: boolean;
+  monthly_fee: number;
 }
 
 export interface MonthlyStatus {
@@ -111,8 +115,28 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   listPlayers: () => req<Player[]>("/players"),
-  createPlayer: (name: string, type: PlayerType) =>
-    req<Player>("/players", { method: "POST", body: JSON.stringify({ name, type }) }),
+  createPlayer: (
+    name: string,
+    type: PlayerType,
+    extras?: { monthly_fee?: number | null; churrasco_fee?: number | null; guest_fee?: number | null },
+  ) =>
+    req<Player>("/players", {
+      method: "POST",
+      body: JSON.stringify({ name, type, ...(extras || {}) }),
+    }),
+  updatePlayer: (
+    id: string,
+    patch: {
+      name?: string;
+      type?: PlayerType;
+      monthly_fee?: number | null;
+      churrasco_fee?: number | null;
+      guest_fee?: number | null;
+      clear_monthly_fee?: boolean;
+      clear_churrasco_fee?: boolean;
+      clear_guest_fee?: boolean;
+    },
+  ) => req<Player>(`/players/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
   deletePlayer: (id: string) => req<any>(`/players/${id}`, { method: "DELETE" }),
 
   getCurrentWeek: () => req<CurrentWeek>("/weeks/current"),
