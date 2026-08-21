@@ -17,13 +17,22 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, Attendance, CurrentWeek, Player, PixSettings, TeamSettings } from "@/src/api";
+import {
+  api,
+  Attendance,
+  CurrentWeek,
+  MonthlyStatus,
+  Player,
+  PixSettings,
+  TeamSettings,
+} from "@/src/api";
 import { PRICES, brl, colors, radius, spacing } from "@/src/theme";
 
 const HERO_URL =
   "https://images.unsplash.com/photo-1459865264687-595d652de67e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxmb290YmFsbCUyMGZpZWxkJTIwcGl0Y2glMjBncmFzc3xlbnwwfHx8fDE3ODMwMDEzMTR8MA&ixlib=rb-4.1.0&q=85";
 
 const APP_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+const GAME_SCHEDULE = "Toda terça, 21h";
 
 type FilterKey = "todos" | "mensalista" | "convidado";
 const FILTERS: { key: FilterKey; label: string }[] = [
@@ -31,6 +40,8 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "mensalista", label: "Mensalistas" },
   { key: "convidado", label: "Convidados" },
 ];
+
+type PlayerStatus = "confirmed" | "waiting" | "off";
 
 export default function Home() {
   const router = useRouter();
@@ -42,20 +53,23 @@ export default function Home() {
   const [current, setCurrent] = useState<CurrentWeek | null>(null);
   const [pix, setPix] = useState<PixSettings>({ pix_key: "", holder_name: "", bank: "" });
   const [team, setTeam] = useState<TeamSettings>({ team_name: "", team_emoji: "" });
+  const [monthly, setMonthly] = useState<MonthlyStatus | null>(null);
   const [filter, setFilter] = useState<FilterKey>("todos");
 
   const load = useCallback(async () => {
     try {
-      const [pl, cw, px, tm] = await Promise.all([
+      const [pl, cw, px, tm, mo] = await Promise.all([
         api.listPlayers(),
         api.getCurrentWeek(),
         api.getPix(),
         api.getTeam(),
+        api.getMonthlyCurrent(),
       ]);
       setPlayers(pl);
       setCurrent(cw);
       setPix(px);
       setTeam(tm);
+      setMonthly(mo);
     } catch (e) {
       console.log("load error", e);
     }
@@ -87,15 +101,48 @@ export default function Home() {
     return m;
   }, [current]);
 
+  const monthlyPaidMap = useMemo(() => {
+    const m = new Map<string, boolean>();
+    monthly?.items.forEach((it) => m.set(it.player.id, it.paid));
+    return m;
+  }, [monthly]);
+
+  const getStatus = useCallback(
+    (p: Player): PlayerStatus => {
+      const a = attendanceMap.get(p.id);
+      if (!a?.attending) return "off";
+      if (p.type === "convidado") {
+        return a.paid ? "confirmed" : "waiting";
+      }
+      // mensalista
+      const paidMonth = monthlyPaidMap.get(p.id) || false;
+      if (monthly?.past_deadline && !paidMonth) return "waiting";
+      return "confirmed";
+    },
+    [attendanceMap, monthlyPaidMap, monthly],
+  );
+
   const filteredPlayers = useMemo(() => {
     if (filter === "todos") return players;
     return players.filter((p) => p.type === filter);
   }, [players, filter]);
 
+  const confirmedPlayers = useMemo(
+    () => filteredPlayers.filter((p) => getStatus(p) === "confirmed"),
+    [filteredPlayers, getStatus],
+  );
+  const waitingPlayers = useMemo(
+    () => filteredPlayers.filter((p) => getStatus(p) === "waiting"),
+    [filteredPlayers, getStatus],
+  );
+  const offPlayers = useMemo(
+    () => filteredPlayers.filter((p) => getStatus(p) === "off"),
+    [filteredPlayers, getStatus],
+  );
+
   const setAttendance = async (playerId: string, patch: Partial<Attendance>) => {
     if (!current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    // optimistic update
     const prev = attendanceMap.get(playerId);
     const optimistic: Attendance = {
       week_id: current.week.id,
@@ -117,11 +164,7 @@ export default function Home() {
       return { ...c, attendance: [...others, optimistic] };
     });
     try {
-      await api.upsertAttendance({
-        week_id: current.week.id,
-        player_id: playerId,
-        ...patch,
-      });
+      await api.upsertAttendance({ week_id: current.week.id, player_id: playerId, ...patch });
       const cw = await api.getCurrentWeek();
       setCurrent(cw);
     } catch (e) {
@@ -132,40 +175,46 @@ export default function Home() {
 
   const shareWhatsApp = async () => {
     if (!current) return;
-    const lines: string[] = [];
     const teamLabel = team.team_name || "Lista Futebol";
     const emoji = team.team_emoji || "⚽";
+    const lines: string[] = [];
     lines.push(`*${emoji} ${teamLabel} - ${current.week.label}*`);
+    lines.push(`🗓️ ${GAME_SCHEDULE}`);
     lines.push("");
-    const mensalistas = players.filter(
-      (p) => p.type === "mensalista" && attendanceMap.get(p.id)?.attending,
-    );
-    const convidados = players.filter(
-      (p) => p.type === "convidado" && attendanceMap.get(p.id)?.attending,
-    );
-    lines.push(`*Mensalistas (${brl(PRICES.MENSALISTA)}):*`);
-    mensalistas.forEach((p, i) => {
+
+    const mensa = confirmedPlayers.filter((p) => p.type === "mensalista");
+    const conv = confirmedPlayers.filter((p) => p.type === "convidado");
+
+    lines.push(`*Mensalistas em dia:*`);
+    mensa.forEach((p, i) => {
       const a = attendanceMap.get(p.id);
       const churras = a?.churrasco ? " 🍖" : "";
-      const paid = a?.paid ? " ✅" : "";
-      lines.push(`${i + 1}. ${p.name}${churras}${paid}`);
+      lines.push(`${i + 1}. ${p.name}${churras}`);
     });
-    if (mensalistas.length === 0) lines.push("_(vazio)_");
+    if (mensa.length === 0) lines.push("_(vazio)_");
     lines.push("");
-    lines.push(`*Convidados (${brl(PRICES.CONVIDADO)}):*`);
-    convidados.forEach((p, i) => {
+    lines.push(`*Convidados (${brl(PRICES.CONVIDADO)}) - pagos:*`);
+    conv.forEach((p, i) => {
       const a = attendanceMap.get(p.id);
       const churras = a?.churrasco ? " 🍖" : "";
-      const paid = a?.paid ? " ✅" : "";
-      lines.push(`${i + 1}. ${p.name}${churras}${paid}`);
+      lines.push(`${i + 1}. ${p.name}${churras}`);
     });
-    if (convidados.length === 0) lines.push("_(vazio)_");
+    if (conv.length === 0) lines.push("_(vazio)_");
+
+    if (waitingPlayers.length > 0) {
+      lines.push("");
+      lines.push(`⏳ *Lista de espera (aguardando pagamento):*`);
+      waitingPlayers.forEach((p, i) => {
+        const tag = p.type === "mensalista" ? "mensalidade" : "convite";
+        lines.push(`${i + 1}. ${p.name} _(${tag})_`);
+      });
+    }
+
     lines.push("");
     const s = current.summary;
-    lines.push(`🍖 Churrasco: ${s.count_churrasco} pessoas (${brl(PRICES.CHURRASCO)} cada)`);
-    lines.push("");
-    lines.push(`💰 *Total: ${brl(s.total_arrecadado)}*`);
-    lines.push(`✅ Pago: ${brl(s.total_pago)} · ⏳ Pendente: ${brl(s.total_pendente)}`);
+    lines.push(`🍖 Churrasco: ${s.count_churrasco} pessoas`);
+    lines.push(`💰 *Arrecadado na semana: ${brl(s.total_arrecadado)}*`);
+    lines.push(`(convidados + churrasco. Mensalidade é mensal.)`);
     if (pix.pix_key) {
       lines.push("");
       lines.push(`*Pix:* ${pix.pix_key}`);
@@ -187,8 +236,9 @@ export default function Home() {
     const emoji = team.team_emoji || "⚽";
     const msg =
       `${emoji} *Fala, galera!* Entra no app da ${teamLabel}:\n\n` +
+      `🗓️ ${GAME_SCHEDULE}\n` +
       `👉 ${APP_URL}\n\n` +
-      `Lá você confirma presença, marca o churrasco 🍖 e paga via Pix. Simples assim!`;
+      `Lá você confirma presença, marca o churrasco 🍖 e paga via Pix.`;
     const url = `whatsapp://send?text=${encodeURIComponent(msg)}`;
     const can = await Linking.canOpenURL(url);
     if (can) Linking.openURL(url);
@@ -203,67 +253,121 @@ export default function Home() {
     );
   }
 
+  const renderPlayer = (p: Player) => {
+    const a = attendanceMap.get(p.id);
+    const status = getStatus(p);
+    const paidMonth = monthlyPaidMap.get(p.id) || false;
+    return (
+      <PlayerCard
+        key={p.id}
+        player={p}
+        attending={!!a?.attending}
+        churrasco={!!a?.churrasco}
+        paid={!!a?.paid}
+        status={status}
+        paidMonth={paidMonth}
+        pastDeadline={!!monthly?.past_deadline}
+        onToggleAttend={() => setAttendance(p.id, { attending: !a?.attending })}
+        onToggleChurras={() => setAttendance(p.id, { churrasco: !a?.churrasco })}
+        onTogglePaid={() => setAttendance(p.id, { paid: !a?.paid })}
+        onOpenHistory={() => router.push(`/history/${p.id}`)}
+        onOpenPix={() => router.push("/pix")}
+        onOpenMonthly={() => router.push("/monthly")}
+        hasPix={!!pix.pix_key}
+      />
+    );
+  };
+
   return (
     <View style={styles.root}>
       <FlatList
-        data={filteredPlayers}
-        keyExtractor={(p) => p.id}
+        data={[]}
+        keyExtractor={() => "x"}
+        renderItem={() => null}
         contentContainerStyle={{ paddingBottom: 180 + insets.bottom }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
         ListHeaderComponent={
-          <Header
-            weekLabel={current?.week.label || ""}
-            summary={current?.summary}
-            onSettings={() => router.push("/settings")}
-            onWeeks={() => router.push("/weeks")}
-            onInvite={inviteFriends}
-            filter={filter}
-            setFilter={setFilter}
-            confirmed={current?.summary.count_confirmados || 0}
-            total={players.length}
-            team={team}
-          />
-        }
-        ListEmptyComponent={
-          <View style={styles.empty} testID="home-empty">
-            <Ionicons name="football-outline" size={64} color={colors.brand} />
-            <Text style={styles.emptyTitle}>Nenhum jogador cadastrado</Text>
-            <Text style={styles.emptySub}>Toque em &quot;Adicionar Jogador&quot; para começar!</Text>
-          </View>
-        }
-        renderItem={({ item }) => {
-          const a = attendanceMap.get(item.id);
-          return (
-            <PlayerCard
-              player={item}
-              attending={!!a?.attending}
-              churrasco={!!a?.churrasco}
-              paid={!!a?.paid}
-              onToggleAttend={() => setAttendance(item.id, { attending: !a?.attending })}
-              onToggleChurras={() => setAttendance(item.id, { churrasco: !a?.churrasco })}
-              onTogglePaid={() => setAttendance(item.id, { paid: !a?.paid })}
-              onOpenHistory={() => router.push(`/history/${item.id}`)}
-              onOpenPix={() => router.push("/pix")}
-              hasPix={!!pix.pix_key}
+          <>
+            <Header
+              weekLabel={current?.week.label || ""}
+              schedule={GAME_SCHEDULE}
+              summary={current?.summary}
+              monthly={monthly}
+              onSettings={() => router.push("/settings")}
+              onWeeks={() => router.push("/weeks")}
+              onInvite={inviteFriends}
+              onMonthly={() => router.push("/monthly")}
+              onExpenses={() => router.push("/expenses")}
+              team={team}
             />
-          );
-        }}
+
+            {/* Filter chips */}
+            <View style={styles.chipRowWrap}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRowContent}>
+                {FILTERS.map((f) => {
+                  const active = filter === f.key;
+                  return (
+                    <Pressable
+                      key={f.key}
+                      testID={`filter-chip-${f.key}`}
+                      onPress={() => setFilter(f.key)}
+                      style={[styles.chip, active && styles.chipActive]}
+                    >
+                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{f.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Confirmed */}
+            <SectionHeader
+              title="Lista confirmada"
+              subtitle={`${confirmedPlayers.length} jogador${confirmedPlayers.length === 1 ? "" : "es"}`}
+              icon="checkmark-circle"
+              tint={colors.success}
+            />
+            {confirmedPlayers.length === 0 ? (
+              <EmptySection text="Ninguém confirmado ainda esta semana." />
+            ) : (
+              confirmedPlayers.map(renderPlayer)
+            )}
+
+            {/* Waiting */}
+            {waitingPlayers.length > 0 && (
+              <>
+                <SectionHeader
+                  title="Lista de espera"
+                  subtitle={`${waitingPlayers.length} aguardando pagamento`}
+                  icon="hourglass-outline"
+                  tint="#E67E22"
+                />
+                {waitingPlayers.map(renderPlayer)}
+              </>
+            )}
+
+            {/* Off / não confirmou */}
+            {offPlayers.length > 0 && (
+              <>
+                <SectionHeader
+                  title="Não confirmaram"
+                  subtitle={`${offPlayers.length} jogador${offPlayers.length === 1 ? "" : "es"}`}
+                  icon="ellipsis-horizontal-circle-outline"
+                  tint={colors.muted}
+                />
+                {offPlayers.map(renderPlayer)}
+              </>
+            )}
+          </>
+        }
       />
 
       {/* Bottom action bar */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <Pressable
-          testID="share-whatsapp-btn"
-          style={styles.whatsBtn}
-          onPress={shareWhatsApp}
-        >
+        <Pressable testID="share-whatsapp-btn" style={styles.whatsBtn} onPress={shareWhatsApp}>
           <Ionicons name="logo-whatsapp" size={22} color="#fff" />
         </Pressable>
-        <Pressable
-          testID="add-player-btn"
-          style={styles.addBtn}
-          onPress={() => router.push("/add-player")}
-        >
+        <Pressable testID="add-player-btn" style={styles.addBtn} onPress={() => router.push("/add-player")}>
           <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
           <Text style={styles.addBtnText}>Adicionar Jogador</Text>
         </Pressable>
@@ -274,25 +378,25 @@ export default function Home() {
 
 function Header({
   weekLabel,
+  schedule,
   summary,
+  monthly,
   onSettings,
   onWeeks,
   onInvite,
-  filter,
-  setFilter,
-  confirmed,
-  total,
+  onMonthly,
+  onExpenses,
   team,
 }: {
   weekLabel: string;
+  schedule: string;
   summary: any;
+  monthly: MonthlyStatus | null;
   onSettings: () => void;
   onWeeks: () => void;
   onInvite: () => void;
-  filter: FilterKey;
-  setFilter: (f: FilterKey) => void;
-  confirmed: number;
-  total: number;
+  onMonthly: () => void;
+  onExpenses: () => void;
   team: TeamSettings;
 }) {
   const teamName = team.team_name || "Turma do Futebol";
@@ -302,7 +406,7 @@ function Header({
       <View style={styles.hero}>
         <Image source={HERO_URL} style={StyleSheet.absoluteFillObject} contentFit="cover" transition={200} />
         <LinearGradient
-          colors={["rgba(30,132,73,0.35)", "rgba(35,43,37,0.85)"]}
+          colors={["rgba(30,132,73,0.35)", "rgba(35,43,37,0.9)"]}
           style={StyleSheet.absoluteFillObject}
         />
         <SafeAreaView edges={["top"]} style={styles.heroContent}>
@@ -310,7 +414,13 @@ function Header({
             <View style={{ flex: 1 }}>
               <View style={styles.teamRow}>
                 <Text style={styles.teamEmoji}>{teamEmoji}</Text>
-                <Text style={styles.teamName} numberOfLines={1} testID="team-name">{teamName}</Text>
+                <Text style={styles.teamName} numberOfLines={1} testID="team-name">
+                  {teamName}
+                </Text>
+              </View>
+              <View style={styles.scheduleRow}>
+                <Ionicons name="time-outline" size={12} color="#fff" />
+                <Text style={styles.scheduleText} testID="game-schedule">{schedule}</Text>
               </View>
               <Text style={styles.heroKicker}>Semana atual</Text>
               <Text style={styles.heroTitle} testID="week-label">{weekLabel}</Text>
@@ -328,18 +438,19 @@ function Header({
             </View>
           </View>
 
-          {/* Summary card overlay */}
+          {/* Weekly total */}
           <View style={styles.summaryCard} testID="summary-card">
             <View style={styles.summaryHead}>
-              <Text style={styles.summaryLabel}>Total arrecadado</Text>
+              <Text style={styles.summaryLabel}>Arrecadado na semana</Text>
               <View style={styles.confirmBadge}>
                 <Ionicons name="people" size={14} color={colors.onBrandTertiary} />
-                <Text style={styles.confirmBadgeText}>{confirmed}/{total} confirmados</Text>
+                <Text style={styles.confirmBadgeText}>{summary?.count_confirmados || 0} confirmados</Text>
               </View>
             </View>
             <Text style={styles.summaryTotal} testID="summary-total">
               {brl(summary?.total_arrecadado || 0)}
             </Text>
+            <Text style={styles.summaryHint}>Convidados + Churrasco. Mensalidade é cobrada mensalmente.</Text>
             <View style={styles.summaryPayRow}>
               <View style={styles.payChip}>
                 <View style={[styles.dot, { backgroundColor: colors.success }]} />
@@ -351,13 +462,6 @@ function Header({
               </View>
             </View>
             <View style={styles.summaryGrid}>
-              <SummaryCell
-                label="Mensalistas"
-                value={brl(summary?.total_mensalistas || 0)}
-                sub={`${summary?.count_mensalistas || 0} × ${brl(PRICES.MENSALISTA)}`}
-                icon="star"
-                tint={colors.brandPrimary}
-              />
               <SummaryCell
                 label="Convidados"
                 value={brl(summary?.total_convidados || 0)}
@@ -377,49 +481,59 @@ function Header({
         </SafeAreaView>
       </View>
 
-      {/* Filter chips */}
-      <View style={styles.chipRowWrap}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRowContent}
-        >
-          {FILTERS.map((f) => {
-            const active = filter === f.key;
-            return (
-              <Pressable
-                key={f.key}
-                testID={`filter-chip-${f.key}`}
-                onPress={() => setFilter(f.key)}
-                style={[styles.chip, active && styles.chipActive]}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>{f.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Jogadores</Text>
+      {/* Monthly + Expenses shortcuts */}
+      <View style={styles.tabRow}>
+        <Pressable style={styles.tabBtn} onPress={onMonthly} testID="open-monthly-btn">
+          <View style={[styles.tabIcon, { backgroundColor: colors.brand + "22" }]}>
+            <Ionicons name="star" size={18} color={colors.brand} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tabTitle}>Mensalidades</Text>
+            <Text style={styles.tabSub}>
+              {monthly ? `${monthly.count_pagos}/${monthly.items.length} pagos` : "-"}
+              {monthly?.past_deadline ? " · prazo vencido" : ""}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        </Pressable>
+        <Pressable style={styles.tabBtn} onPress={onExpenses} testID="open-expenses-btn">
+          <View style={[styles.tabIcon, { backgroundColor: "#D32F2F22" }]}>
+            <Ionicons name="wallet-outline" size={18} color="#D32F2F" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tabTitle}>Despesas</Text>
+            <Text style={styles.tabSub}>Campo, churrasco e outros</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        </Pressable>
       </View>
     </View>
   );
 }
 
-function SummaryCell({
-  label,
-  value,
-  sub,
-  icon,
-  tint,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  icon: any;
-  tint: string;
-}) {
+function SectionHeader({ title, subtitle, icon, tint }: any) {
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={[styles.sectionIcon, { backgroundColor: tint + "22" }]}>
+        <Ionicons name={icon} size={16} color={tint} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+      </View>
+    </View>
+  );
+}
+
+function EmptySection({ text }: { text: string }) {
+  return (
+    <View style={styles.emptySection}>
+      <Text style={styles.emptySectionText}>{text}</Text>
+    </View>
+  );
+}
+
+function SummaryCell({ label, value, sub, icon, tint }: any) {
   return (
     <View style={styles.summaryCell}>
       <View style={[styles.summaryIcon, { backgroundColor: tint + "22" }]}>
@@ -437,22 +551,30 @@ function PlayerCard({
   attending,
   churrasco,
   paid,
+  status,
+  paidMonth,
+  pastDeadline,
   onToggleAttend,
   onToggleChurras,
   onTogglePaid,
   onOpenHistory,
   onOpenPix,
+  onOpenMonthly,
   hasPix,
 }: {
   player: Player;
   attending: boolean;
   churrasco: boolean;
   paid: boolean;
+  status: PlayerStatus;
+  paidMonth: boolean;
+  pastDeadline: boolean;
   onToggleAttend: () => void;
   onToggleChurras: () => void;
   onTogglePaid: () => void;
   onOpenHistory: () => void;
   onOpenPix: () => void;
+  onOpenMonthly: () => void;
   hasPix: boolean;
 }) {
   const initials = player.name
@@ -462,12 +584,25 @@ function PlayerCard({
     .join("");
   const isMensa = player.type === "mensalista";
   const price = isMensa ? PRICES.MENSALISTA : PRICES.CONVIDADO;
-  const total = price + (churrasco ? PRICES.CHURRASCO : 0);
+
+  const waiting = status === "waiting";
+  const waitingReason = waiting
+    ? isMensa
+      ? "Aguardando mensalidade"
+      : "Aguardando pagamento"
+    : "";
 
   return (
-    <View style={[styles.card, attending && styles.cardActive]} testID={`player-card-${player.id}`}>
+    <View
+      style={[
+        styles.card,
+        status === "confirmed" && styles.cardActive,
+        waiting && styles.cardWaiting,
+      ]}
+      testID={`player-card-${player.id}`}
+    >
       <View style={styles.cardRow}>
-        <Pressable onPress={onOpenHistory} style={styles.avatarWrap} testID={`open-history-${player.id}`}>
+        <Pressable onPress={onOpenHistory} testID={`open-history-${player.id}`}>
           <View style={[styles.avatar, { backgroundColor: isMensa ? colors.brandTertiary : "#EAF2F8" }]}>
             <Text style={[styles.avatarText, { color: isMensa ? colors.onBrandTertiary : "#1F5F84" }]}>
               {initials || "?"}
@@ -484,12 +619,19 @@ function PlayerCard({
                 color={isMensa ? colors.onBrandTertiary : "#1F5F84"}
               />
               <Text style={[styles.typeBadgeText, { color: isMensa ? colors.onBrandTertiary : "#1F5F84" }]}>
-                {isMensa ? "Mensalista" : "Convidado"} · {brl(price)}
+                {isMensa ? `Mensalista · ${brl(PRICES.MENSALISTA)}/mês` : `Convidado · ${brl(price)}`}
               </Text>
             </View>
-            {attending && (
-              <View style={styles.totalBadge}>
-                <Text style={styles.totalBadgeText}>Total {brl(total)}</Text>
+            {isMensa && paidMonth && (
+              <View style={[styles.smallBadge, { backgroundColor: "#E6F7EC" }]}>
+                <Ionicons name="checkmark" size={10} color={colors.success} />
+                <Text style={[styles.smallBadgeText, { color: colors.success }]}>Mês em dia</Text>
+              </View>
+            )}
+            {isMensa && !paidMonth && pastDeadline && (
+              <View style={[styles.smallBadge, { backgroundColor: "#FDEAEA" }]}>
+                <Ionicons name="alert" size={10} color={colors.error} />
+                <Text style={[styles.smallBadgeText, { color: colors.error }]}>Mês atrasado</Text>
               </View>
             )}
           </View>
@@ -507,6 +649,13 @@ function PlayerCard({
         </Pressable>
       </View>
 
+      {waiting && (
+        <View style={styles.waitingBar}>
+          <Ionicons name="hourglass" size={14} color="#8A6A00" />
+          <Text style={styles.waitingText}>{waitingReason}</Text>
+        </View>
+      )}
+
       {attending && (
         <View style={styles.actionsRow}>
           <Pressable
@@ -519,26 +668,39 @@ function PlayerCard({
               Churrasco {brl(PRICES.CHURRASCO)}
             </Text>
           </Pressable>
-          <Pressable
-            testID={`toggle-paid-${player.id}`}
-            onPress={onTogglePaid}
-            style={[styles.actionChip, paid && styles.actionChipPaidOn]}
-          >
-            <Ionicons
-              name={paid ? "checkmark-circle" : "cash-outline"}
-              size={16}
-              color={paid ? "#fff" : colors.success}
-            />
-            <Text style={[styles.actionChipText, paid && { color: "#fff" }]}>
-              {paid ? "Pago" : "Marcar pago"}
-            </Text>
-          </Pressable>
-          {hasPix && (
+          {!isMensa && (
             <Pressable
-              testID={`open-pix-${player.id}`}
-              onPress={onOpenPix}
-              style={styles.pixMiniBtn}
+              testID={`toggle-paid-${player.id}`}
+              onPress={onTogglePaid}
+              style={[styles.actionChip, paid && styles.actionChipPaidOn]}
             >
+              <Ionicons
+                name={paid ? "checkmark-circle" : "cash-outline"}
+                size={16}
+                color={paid ? "#fff" : colors.success}
+              />
+              <Text style={[styles.actionChipText, paid && { color: "#fff" }]}>
+                {paid ? "Pago" : "Marcar pago"}
+              </Text>
+            </Pressable>
+          )}
+          {isMensa && (
+            <Pressable
+              testID={`open-monthly-from-card-${player.id}`}
+              onPress={onOpenMonthly}
+              style={[
+                styles.actionChip,
+                paidMonth && { backgroundColor: colors.success, borderColor: colors.success },
+              ]}
+            >
+              <Ionicons name="calendar-outline" size={16} color={paidMonth ? "#fff" : colors.brand} />
+              <Text style={[styles.actionChipText, paidMonth && { color: "#fff" }]}>
+                {paidMonth ? "Mês pago" : "Ver mensalidade"}
+              </Text>
+            </Pressable>
+          )}
+          {hasPix && (
+            <Pressable testID={`open-pix-${player.id}`} onPress={onOpenPix} style={styles.pixMiniBtn}>
               <Ionicons name="qr-code-outline" size={16} color={colors.brand} />
               <Text style={styles.pixMiniText}>Pix</Text>
             </Pressable>
@@ -553,12 +715,14 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   loadingScreen: { flex: 1, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
 
-  hero: { minHeight: 340, backgroundColor: colors.brand, overflow: "hidden" },
+  hero: { minHeight: 360, backgroundColor: colors.brand, overflow: "hidden" },
   heroContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, paddingTop: spacing.sm },
   heroTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: spacing.sm, gap: spacing.md },
-  teamRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
+  teamRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
   teamEmoji: { fontSize: 22 },
   teamName: { color: "#fff", fontSize: 15, fontWeight: "800", flexShrink: 1 },
+  scheduleRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 6 },
+  scheduleText: { color: "#fff", fontSize: 11, fontWeight: "700" },
   heroKicker: { color: "rgba(255,255,255,0.85)", fontSize: 11, letterSpacing: 1, textTransform: "uppercase" },
   heroTitle: { color: "#fff", fontSize: 22, fontWeight: "800", marginTop: 2 },
   heroActions: { flexDirection: "row", gap: spacing.sm },
@@ -594,8 +758,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   confirmBadgeText: { color: colors.onBrandTertiary, fontSize: 11, fontWeight: "700" },
-  summaryTotal: { fontSize: 32, fontWeight: "900", color: colors.onSurface, marginTop: 2 },
-  summaryPayRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs, marginBottom: spacing.md },
+  summaryTotal: { fontSize: 30, fontWeight: "900", color: colors.onSurface, marginTop: 2 },
+  summaryHint: { fontSize: 11, color: colors.muted, marginTop: 2, marginBottom: spacing.sm },
+  summaryPayRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
   payChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -607,7 +772,7 @@ const styles = StyleSheet.create({
   },
   payChipText: { fontSize: 11, color: colors.onSurface, fontWeight: "600" },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  summaryGrid: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+  summaryGrid: { flexDirection: "row", gap: spacing.sm },
   summaryCell: {
     flex: 1,
     padding: spacing.sm,
@@ -620,6 +785,22 @@ const styles = StyleSheet.create({
   cellLabel: { fontSize: 11, color: colors.muted, marginTop: 6 },
   cellValue: { fontSize: 15, fontWeight: "800", color: colors.onSurface, marginTop: 2 },
   cellSub: { fontSize: 10, color: colors.muted, marginTop: 2 },
+
+  tabRow: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg, marginTop: spacing.md },
+  tabBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tabIcon: { width: 34, height: 34, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  tabTitle: { fontSize: 13, fontWeight: "800", color: colors.onSurface },
+  tabSub: { fontSize: 10, color: colors.muted, marginTop: 1 },
 
   chipRowWrap: { marginTop: spacing.md, height: 56, justifyContent: "center" },
   chipRowContent: { paddingHorizontal: spacing.lg, gap: spacing.sm },
@@ -638,26 +819,37 @@ const styles = StyleSheet.create({
   chipText: { color: colors.onSurface, fontWeight: "600", fontSize: 13 },
   chipTextActive: { color: colors.onSurfaceInverse },
 
-  sectionHeader: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm },
-  sectionTitle: { fontSize: 18, fontWeight: "800", color: colors.onSurface },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  sectionIcon: { width: 28, height: 28, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  sectionTitle: { fontSize: 15, fontWeight: "800", color: colors.onSurface },
+  sectionSubtitle: { fontSize: 11, color: colors.muted, marginTop: 1 },
+  emptySection: {
+    marginHorizontal: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceTertiary,
+  },
+  emptySectionText: { color: colors.muted, fontSize: 12, textAlign: "center" },
 
   card: {
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     padding: spacing.md,
     borderRadius: radius.lg,
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 1,
   },
   cardActive: { borderColor: colors.brand + "55", backgroundColor: "#F6FBF7" },
+  cardWaiting: { borderColor: "#F1C40F55", backgroundColor: "#FFFDF0" },
   cardRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  avatarWrap: {},
   avatar: { width: 46, height: 46, borderRadius: 999, alignItems: "center", justifyContent: "center" },
   avatarText: { fontSize: 15, fontWeight: "800" },
   playerName: { fontSize: 16, fontWeight: "700", color: colors.onSurface },
@@ -671,13 +863,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   typeBadgeText: { fontSize: 11, fontWeight: "700" },
-  totalBadge: {
+  smallBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.pill,
-    backgroundColor: colors.brandSecondary,
   },
-  totalBadgeText: { fontSize: 11, fontWeight: "800", color: colors.onBrandSecondary },
+  smallBadgeText: { fontSize: 10, fontWeight: "800" },
   checkBtn: {
     width: 44,
     height: 44,
@@ -689,6 +883,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
   },
   checkBtnActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+
+  waitingBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: spacing.md,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.md,
+    backgroundColor: "#FFF4D6",
+  },
+  waitingText: { fontSize: 12, fontWeight: "700", color: "#8A6A00" },
 
   actionsRow: {
     flexDirection: "row",
@@ -723,10 +929,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandTertiary,
   },
   pixMiniText: { fontSize: 12, fontWeight: "700", color: colors.brand },
-
-  empty: { alignItems: "center", paddingVertical: 48, gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: "800", color: colors.onSurface, marginTop: 8 },
-  emptySub: { color: colors.muted, fontSize: 13 },
 
   bottomBar: {
     position: "absolute",

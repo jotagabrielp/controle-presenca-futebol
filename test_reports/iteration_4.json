@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 4 validates the major FutLista update: monthly mensalidade (R$60/mês, 5º dia útil deadline), waiting list for unpaid convidados & blocked mensalistas, new /monthly and /expenses tabs, weekly summary excluding mensalidade, and fixed schedule 'Toda terça, 21h'. Backend: 21/21 pytest passing (added /app/backend/tests/test_monthly_expenses.py with 8 new tests covering monthly/current structure, mark-paid persistence, expenses CRUD, validation (empty desc → 400, amount<=0 → 400, invalid category → 422), delete 404, month filter, weekly summary new fields, convidado waiting logic; also fixed 1 outdated regression assertion in backend_test.py to reflect that /weeks list total_mensalistas is now always 0). Frontend (Expo web, 390x844): Home shows 'Toda terça, 21h' via testID game-schedule; summary card correctly says 'Convidados + Churrasco. Mensalidade é cobrada mensalmente.'; both open-monthly-btn and open-expenses-btn navigate correctly; /monthly page shows 'Prazo: 5º dia útil (07/08/2026) · vencido' and toggle-monthly-{id} works round-trip; /expenses form (new-expense-btn → cat-campo → input-description → input-amount → save-expense-btn) creates expense, summary total updates from R$230 → R$353,45; waiting list section 'Lista de espera' appears with 'Aguardando pagamento' badge for unpaid convidados. One minor UX issue: delete-expense-{id} uses React Native Alert.alert which does not render on react-native-web preview (native only), so delete cannot be triggered from web preview — works on device/Expo Go. Deprecated packages detected: none. Shadow* deprecation warnings pre-existing (not blocking).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "expenses.tsx delete confirmation", "issue": "Alert.alert('Excluir despesa'...) does not render on react-native-web preview — clicking delete-expense-{id} silently no-ops on web. Works on native. Reference: /app/frontend/app/expenses.tsx:81-93", "testID": "delete-expense-{id}", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow props", "issue": "React Native Web deprecation warning: 'shadow*' style props are deprecated. Use 'boxShadow'. Reference: /app/frontend/app/index.tsx summaryCard/card style blocks. Pre-existing, cosmetic only."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_monthly_expenses.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(LOW) Consider replacing Alert.alert in /app/frontend/app/expenses.tsx:82 with a cross-platform confirmation (e.g. a custom modal or window.confirm branching on Platform.OS === 'web') so admins can also delete expenses from the web preview.",
+    "(OPTIONAL) Migrate shadow* → boxShadow in /app/frontend/app/index.tsx to silence RN-web deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py _summary_for_week and list_weeks correctly force total_mensalistas=0 and split blocked mensalistas / unpaid convidados into their respective *_pendentes counters — matches spec.",
+    "server.py _fifth_business_day returns 07/08/2026 for August 2026 as expected (5 weekdays starting from Aug 1 Sat: 3,4,5,6,7 → correctly Aug 7 Fri). Verified via UI.",
+    "monthly upsert endpoint correctly sets paid_at on paid=True and clears it on paid=False; persistence verified via GET /monthly/current.",
+    "Expenses model derives month from date[:7] on server-side — good, avoids client drift.",
+    "PUT /monthly is idempotent via find_one + $set upsert path (no duplicate docs on repeat).",
+    "Frontend PlayerCard status logic correctly moves convidado (attending & !paid) → 'waiting' and mensalista (attending & !paidMonth & past_deadline) → 'waiting'. Verified 'Cauã' appears in Lista de espera with 'Aguardando pagamento' badge.",
+    "Alert.alert in expenses.tsx delete flow is a react-native-web soft-limitation — will not fire on web (well documented RN-web behaviour). Non-blocking for the intended mobile use case."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (updated test_list_weeks_summary_consistency_with_current expectations: total_mensalistas now 0; marked monthly paid so mensalista is not blocked)",
+    "/app/backend/tests/test_monthly_expenses.py (NEW — 8 tests covering all new features)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "~95% (all flows work; only cosmetic web-only delete-confirm no-op)"},
+  "seed_data_creation": "All test-created data cleaned up. TEST_UI_Aluguel expense removed via API DELETE. Test mensalista/convidado players removed via /players DELETE. All 4 real mensalistas (Danilo, João Silva, Ricardo, Ricardo) confirmed still unpaid for 2026-08 (count_pagos=0). Pre-existing seed preserved: 2 real expenses (Aluguel semanal R$150 campo, Carne R$80 churrasco) untouched; Pedro Costa convidado + week 2026-08-17 intact.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All new endpoints validated: GET/PUT /api/monthly, GET/POST/DELETE /api/expenses, GET /api/expenses/summary. New testIDs available on Home: game-schedule, open-monthly-btn, open-expenses-btn. On /monthly: back-btn, toggle-monthly-{playerId}. On /expenses: back-btn, new-expense-btn, cat-campo, cat-churrasco, cat-outros, input-description, input-amount, save-expense-btn, expenses-total, expense-{id}, delete-expense-{id}. Known non-blocking: (a) Alert.alert delete-confirm no-op on web preview; (b) shadow* deprecation warnings. Backend 21/21 pytest green. Preview URL: https://squad-checker.preview.emergentagent.com.",
+  "rca_of_issue": "N/A — feature-addition iteration, no bug reported. Two backend test regressions caught during iteration were expected consequences of the new business rule (mensalidade moved from weekly → monthly): (1) /weeks list summary.total_mensalistas now always 0 by design; (2) mensalistas without paid monthly_payment past deadline are excluded from weekly totals, so their churrasco does not count. Fixed by marking monthly paid before asserting churrasco in the regression test."
+}

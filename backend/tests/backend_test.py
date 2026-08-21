@@ -189,18 +189,25 @@ def test_list_weeks_summary_consistency_with_current(s):
     pid = p["id"]
     try:
         wid = s.get(f"{API}/weeks/current", timeout=15).json()["week"]["id"]
+        # Mark monthly paid so mensalista is on the confirmed list (not blocked past deadline)
+        from datetime import datetime, timezone
+        month = datetime.now(timezone.utc).strftime("%Y-%m")
+        s.put(f"{API}/monthly", json={"player_id": pid, "month": month, "paid": True}, timeout=15)
         s.put(f"{API}/attendance", json={"week_id": wid, "player_id": pid, "attending": True, "churrasco": True, "paid": True}, timeout=15)
 
         listed = s.get(f"{API}/weeks", timeout=15).json()
         match = next((x for x in listed if x["week"]["id"] == wid), None)
         assert match is not None
-        # mensalista=60 + churrasco=20 must be counted
-        assert match["summary"]["total_mensalistas"] >= 60
+        # Mensalidade is now monthly, so total_mensalistas is always 0.
+        # Only churrasco=20 counts on the week for a mensalista.
+        assert match["summary"]["total_mensalistas"] == 0
         assert match["summary"]["total_churrasco"] >= 20
-        assert match["summary"]["total_pago"] >= 80
+        assert match["summary"]["total_pago"] >= 20
         assert match["summary"]["count_confirmados"] >= 1
     finally:
         s.delete(f"{API}/players/{pid}", timeout=15)
+        # cleanup monthly leftover
+        s.put(f"{API}/monthly", json={"player_id": pid, "month": month, "paid": False}, timeout=15)
 
 
 # Player history (N+1 optimization)
