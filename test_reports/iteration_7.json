@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 7 validates the invite-link bug fix. BACKEND regression (pytest /app/backend/tests/test_auth_invites.py): 31/31 passing — POST /api/invites (public, no auth), GET /api/invites/{token} (200 for valid, 404 for invalid), POST /api/invites/{token}/accept all identical to prev cycle. FRONTEND (mobile 390x844, prod URL https://squad-checker.preview.emergentagent.com): (T1) /join with no query param → invite-notfound testID rendered, 'Convite inválido' shown, NO raw JSON '\"detail\"' leaked. (T2) /join?token=NONEXISTENT → invite-notfound rendered, no raw JSON. (T3) Legacy /join/[token] with bad token → invite-notfound rendered (backward compat OK). (T4) Real convidado invite created via POST /api/invites, opened via /join?token=REAL → badge 'Convite para Convidado' + 'Bem-vindo à turma!' + input-name + submit-invite-btn all render. (T5) Filled input-name='TEST_JoinQuery_Convidado' + tapped submit-invite-btn → POST /api/invites/{token}/accept succeeded, player created & appears in /api/players, redirected to '/'. Cleanup: player deleted via admin JWT. (T6) Mensalista invite: /join?token=REAL renders 'Convite para Mensalista' badge correctly. (T7) /invite screen (as admin): tapped type-convidado → generate-btn → invite-result testID appears containing URL in EXACT new format 'https://squad-checker.preview.emergentagent.com/join?token=XXX' (query-param format, NOT /join/[token] path format); copy-invite-btn and share-invite-btn both present. All acceptance criteria met. No regressions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow props", "issue": "Pre-existing RN-web deprecation warning: 'shadow*' style props deprecated, use 'boxShadow'. Not related to invite fix. Reference: /app/frontend/app/index.tsx (summaryCard/card styles). Cosmetic only."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_invites.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "frontend/app/invite.tsx line 33: link now built as `${APP_URL}/join?token=${encodeURIComponent(inv.token)}` — universally safe (handles special chars, WhatsApp autolinker, static hosting fallback). Good fix.",
+    "frontend/app/join.tsx line 22-23: reads both `token` and `t` query params (aliased), trims, and handles empty by setting notFound=true. Robust.",
+    "frontend/app/join.tsx line 41: catches api.getInvite error silently and sets notFound=true → no raw '{detail: Not Found}' ever surfaces to user. Correct UX.",
+    "frontend/app/join/[token].tsx: kept as-is for backward compat with links already shared before fix. Legacy path still works. Good decision.",
+    "backend/server.py GET /api/invites/{token} (line 430): unchanged, still returns 404 with `{detail: 'Not Found'}` for invalid tokens — frontend catches this cleanly.",
+    "Minor: /join.tsx and /join/[token].tsx are ~95% duplicated (only differ in how token is read). Consider extracting a shared <JoinInvite token={...}/> component to reduce drift risk. Non-blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (31/31 pytest)", "frontend": "100% (7/7 flows: notfound-no-token, notfound-bad-token, legacy-notfound, convidado-happy-path, submit-creates-player, mensalista-badge, invite-URL-format)"},
+  "seed_data_creation": "Created 1 convidado invite + 1 mensalista invite + 1 TEST_JoinQuery_Convidado player via /join?token= flow. Player was deleted via admin JWT post-test. Invites left in db (no auto-expiry, harmless).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Invite link fix is complete and working. New URL format is /join?token=XYZ (query param). Both /join?token= and legacy /join/[token] render the same UI and handle 404 with testID='invite-notfound'. Backend endpoints unchanged. testIDs to reuse: generate-btn, type-convidado, type-mensalista, invite-result, copy-invite-btn, share-invite-btn, input-name, submit-invite-btn, invite-notfound. Admin creds still: admin@futlista.com/admin123.",
+  "rca_of_issue": "Original bug: user reported invite link returning raw {\"detail\":\"not found\"} JSON. RCA: link was in format /join/[token] (path param). When token contained certain chars (e.g. leading '-') or when WhatsApp auto-shortened URLs or in static-hosting scenarios, the dynamic segment routing could fail and expose the backend 404 JSON. Fix applied by main agent: (1) invite generator now emits /join?token=XYZ (query param — universal); (2) new app/join.tsx reads query param and calls api.getInvite; (3) both routes catch errors and render friendly 'Convite inválido' screen with testID='invite-notfound' instead of leaking JSON. Validated end-to-end: no raw 'detail' JSON is ever exposed to the user in any of the tested paths."
+}

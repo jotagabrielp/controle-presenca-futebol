@@ -30,7 +30,7 @@ export default function InviteScreen() {
     setInviteUrl(null);
     try {
       const inv = await api.createInvite(type);
-      const link = `${APP_URL}/join/${inv.token}`;
+      const link = `${APP_URL}/join?token=${encodeURIComponent(inv.token)}`;
       setInviteUrl(link);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } finally {
