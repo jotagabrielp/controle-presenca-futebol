@@ -26,6 +26,7 @@ import {
   PixSettings,
   TeamSettings,
 } from "@/src/api";
+import { useAuth } from "@/src/auth-context";
 import { PRICES, brl, colors, radius, spacing } from "@/src/theme";
 
 const HERO_URL =
@@ -46,6 +47,7 @@ type PlayerStatus = "confirmed" | "waiting" | "off";
 export default function Home() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { isAdmin, logout } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -275,6 +277,7 @@ export default function Home() {
         onOpenMonthly={() => router.push("/monthly")}
         onEdit={() => router.push(`/player/${p.id}`)}
         hasPix={!!pix.pix_key}
+        isAdmin={isAdmin}
       />
     );
   };
@@ -299,7 +302,10 @@ export default function Home() {
               onInvite={inviteFriends}
               onMonthly={() => router.push("/monthly")}
               onExpenses={() => router.push("/expenses")}
+              onAdmin={() => router.push("/admin-login")}
+              onLogout={logout}
               team={team}
+              isAdmin={isAdmin}
             />
 
             {/* Filter chips */}
@@ -368,10 +374,20 @@ export default function Home() {
         <Pressable testID="share-whatsapp-btn" style={styles.whatsBtn} onPress={shareWhatsApp}>
           <Ionicons name="logo-whatsapp" size={22} color="#fff" />
         </Pressable>
-        <Pressable testID="add-player-btn" style={styles.addBtn} onPress={() => router.push("/add-player")}>
-          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
-          <Text style={styles.addBtnText}>Adicionar Jogador</Text>
+        <Pressable
+          testID="invite-link-btn"
+          style={styles.inviteBtn}
+          onPress={() => router.push("/invite")}
+        >
+          <Ionicons name="person-add-outline" size={20} color={colors.brand} />
+          <Text style={styles.inviteBtnText}>Convidar</Text>
         </Pressable>
+        {isAdmin && (
+          <Pressable testID="add-player-btn" style={styles.addBtn} onPress={() => router.push("/add-player")}>
+            <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
+            <Text style={styles.addBtnText}>Jogador</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -387,7 +403,10 @@ function Header({
   onInvite,
   onMonthly,
   onExpenses,
+  onAdmin,
+  onLogout,
   team,
+  isAdmin,
 }: {
   weekLabel: string;
   schedule: string;
@@ -398,7 +417,10 @@ function Header({
   onInvite: () => void;
   onMonthly: () => void;
   onExpenses: () => void;
+  onAdmin: () => void;
+  onLogout: () => void;
   team: TeamSettings;
+  isAdmin: boolean;
 }) {
   const teamName = team.team_name || "Turma do Futebol";
   const teamEmoji = team.team_emoji || "⚽";
@@ -433,9 +455,20 @@ function Header({
               <Pressable testID="open-weeks-btn" style={styles.iconBtn} onPress={onWeeks}>
                 <Ionicons name="calendar-outline" size={20} color="#fff" />
               </Pressable>
-              <Pressable testID="open-settings-btn" style={styles.iconBtn} onPress={onSettings}>
-                <Ionicons name="settings-outline" size={20} color="#fff" />
-              </Pressable>
+              {isAdmin ? (
+                <>
+                  <Pressable testID="open-settings-btn" style={styles.iconBtn} onPress={onSettings}>
+                    <Ionicons name="settings-outline" size={20} color="#fff" />
+                  </Pressable>
+                  <Pressable testID="admin-logout-btn" style={styles.iconBtn} onPress={onLogout}>
+                    <Ionicons name="log-out-outline" size={20} color="#fff" />
+                  </Pressable>
+                </>
+              ) : (
+                <Pressable testID="admin-login-btn" style={styles.iconBtn} onPress={onAdmin}>
+                  <Ionicons name="shield-outline" size={20} color="#fff" />
+                </Pressable>
+              )}
             </View>
           </View>
 
@@ -482,32 +515,34 @@ function Header({
         </SafeAreaView>
       </View>
 
-      {/* Monthly + Expenses shortcuts */}
-      <View style={styles.tabRow}>
-        <Pressable style={styles.tabBtn} onPress={onMonthly} testID="open-monthly-btn">
-          <View style={[styles.tabIcon, { backgroundColor: colors.brand + "22" }]}>
-            <Ionicons name="star" size={18} color={colors.brand} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.tabTitle}>Mensalidades</Text>
-            <Text style={styles.tabSub}>
-              {monthly ? `${monthly.count_pagos}/${monthly.items.length} pagos` : "-"}
-              {monthly?.past_deadline ? " · prazo vencido" : ""}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-        </Pressable>
-        <Pressable style={styles.tabBtn} onPress={onExpenses} testID="open-expenses-btn">
-          <View style={[styles.tabIcon, { backgroundColor: "#D32F2F22" }]}>
-            <Ionicons name="wallet-outline" size={18} color="#D32F2F" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.tabTitle}>Despesas</Text>
-            <Text style={styles.tabSub}>Campo, churrasco e outros</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-        </Pressable>
-      </View>
+      {/* Monthly + Expenses shortcuts (admin only) */}
+      {isAdmin && (
+        <View style={styles.tabRow}>
+          <Pressable style={styles.tabBtn} onPress={onMonthly} testID="open-monthly-btn">
+            <View style={[styles.tabIcon, { backgroundColor: colors.brand + "22" }]}>
+              <Ionicons name="star" size={18} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tabTitle}>Mensalidades</Text>
+              <Text style={styles.tabSub}>
+                {monthly ? `${monthly.count_pagos}/${monthly.items.length} pagos` : "-"}
+                {monthly?.past_deadline ? " · prazo vencido" : ""}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+          <Pressable style={styles.tabBtn} onPress={onExpenses} testID="open-expenses-btn">
+            <View style={[styles.tabIcon, { backgroundColor: "#D32F2F22" }]}>
+              <Ionicons name="wallet-outline" size={18} color="#D32F2F" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tabTitle}>Despesas</Text>
+              <Text style={styles.tabSub}>Campo, churrasco e outros</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -563,6 +598,7 @@ function PlayerCard({
   onOpenMonthly,
   onEdit,
   hasPix,
+  isAdmin,
 }: {
   player: Player;
   attending: boolean;
@@ -579,6 +615,7 @@ function PlayerCard({
   onOpenMonthly: () => void;
   onEdit: () => void;
   hasPix: boolean;
+  isAdmin: boolean;
 }) {
   const initials = player.name
     .split(" ")
@@ -650,13 +687,15 @@ function PlayerCard({
             )}
           </View>
         </View>
-        <Pressable
-          testID={`edit-player-${player.id}`}
-          onPress={onEdit}
-          style={styles.editBtn}
-        >
-          <Ionicons name="pencil" size={16} color={colors.muted} />
-        </Pressable>
+        {isAdmin && (
+          <Pressable
+            testID={`edit-player-${player.id}`}
+            onPress={onEdit}
+            style={styles.editBtn}
+          >
+            <Ionicons name="pencil" size={16} color={colors.muted} />
+          </Pressable>
+        )}
         <Pressable
           testID={`toggle-attend-${player.id}`}
           onPress={onToggleAttend}
@@ -992,4 +1031,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   addBtnText: { color: colors.onBrandPrimary, fontWeight: "800", fontSize: 15 },
+  inviteBtn: {
+    flex: 1,
+    height: 52,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandTertiary,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  inviteBtnText: { color: colors.brand, fontWeight: "800", fontSize: 15 },
 });

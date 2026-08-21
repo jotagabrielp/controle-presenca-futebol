@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 6 validates the new admin-auth + invite-link feature. BACKEND: 31/31 pytest passing in /app/backend/tests/test_auth_invites.py — GET /auth/setup-required returns false; POST /auth/setup returns 409 when admin exists; POST /auth/login (x-www-form-urlencoded) returns JWT for admin@futlista.com/admin123 and 401 for bad creds; GET /auth/me returns email with valid token, 401 without/with bad token; POST /auth/promote requires auth (401) and returns 409 for existing admin. All 10 protected endpoints (POST/PUT/DELETE /players, PUT /monthly, POST/DELETE /expenses, PUT /settings/pix, PUT /settings/team, GET/DELETE /invites) return 401 without Bearer token and succeed with it. All 5 public endpoints (GET /players, PUT /attendance, GET /weeks/current, GET /monthly/current, GET /expenses) work without token. Invite CRUD: POST /invites (open, no auth) returns invite with token+type+uses=0; GET /invites/{token} returns 404 for bad token and 200 for valid; POST /invites/{token}/accept creates player, increments uses to 1. FRONTEND (mobile 390x844, prod URL): Non-admin home correctly hides admin-logout-btn, add-player-btn, monthly/expenses tabs, and edit-player-{id} pencils (0 pencils rendered); shows admin-login-btn (shield icon) and invite-link-btn ('Convidar'). Admin-login screen loads in 'login' mode (submit btn says 'Entrar') since admin already exists. After logging in admin@futlista.com/admin123, home shows admin-logout-btn, add-player-btn ('Jogador'), Mensalidades/Despesas tabs, edit pencils on every card. /invite: type-mensalista + generate-btn → invite-result appears with copy-invite-btn + share-invite-btn + /join/{token} URL. /join/{token}: valid token renders 'Mensalista' badge, R$60/mês pricing, R$20 churrasco info, input-name + submit-invite-btn → creates player and redirects to /. Invalid token shows invite-notfound screen with 'Convite inválido'. All auth persistence & JWT header injection via authStore working (frontend/src/api.ts req() adds Bearer token). Cleanup: TEST_JoinE2E player deleted post-test. Deprecated packages detected: none new. Pre-existing 'shadow*' style deprecation warning still present (cosmetic).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow props", "issue": "Pre-existing RN-web deprecation warning: 'shadow*' style props deprecated, use 'boxShadow'. Reference: /app/frontend/app/index.tsx summaryCard/card. Cosmetic, non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_invites.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_monthly_expenses.py",
+    "/app/backend/tests/test_custom_fees.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py: JWT_SECRET is loaded from env (good). oauth2_scheme uses auto_error=False and get_current_admin raises 401 explicitly — clean.",
+    "server.py auth_login uses OAuth2PasswordRequestForm (x-www-form-urlencoded), matching frontend api.ts authLogin URLSearchParams — consistent.",
+    "server.py DUMMY_HASH used to prevent timing attacks in login when admin not found — good practice.",
+    "server.py POST /invites uses get_optional_admin so both admins and anonymous players can generate links; created_by='player' when anonymous — matches spec.",
+    "server.py accept_invite increments uses via $inc atomically — safe for concurrent accepts.",
+    "frontend/src/api.ts req() auto-clears authStore on 401 and injects Bearer token when present — clean separation.",
+    "frontend/app/index.tsx correctly gates all admin-only UI (logout, add, edit pencils, monthly/expenses tabs) behind useAuth().isAdmin flag.",
+    "frontend/app/admin-login.tsx uses authSetupRequired on mount to decide setup vs login mode — supports first-run bootstrap correctly.",
+    "frontend/app/join/[token].tsx displays type-specific pricing (mensalista vs convidado) and handles 404 with a dedicated invite-notfound screen — good UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auth_invites.py (NEW — 31 tests covering auth, protected endpoints 401/success, public endpoints, invite CRUD, promote flow)"
+  ],
+  "success_rate": {"backend": "100% (31/31 pytest)", "frontend": "100% (non-admin home, admin login, admin home, invite generation, join flow with valid+invalid tokens all validated)"},
+  "seed_data_creation": "Created 1 TEST_JoinE2E player via /join flow and deleted it post-test. Test-created invites remain in db (no delete endpoint used for them) — expected since invites don't expire per spec.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Auth endpoints: /api/auth/setup-required (public), /api/auth/setup (409 once admin exists), /api/auth/login (form-urlencoded), /api/auth/me, /api/auth/promote (admin), /api/auth/admins (admin). Invites: POST /api/invites (public), GET /api/invites/{token} (public), POST /api/invites/{token}/accept (public), GET/DELETE /api/invites (admin only). Frontend gates admin UI via useAuth().isAdmin. testIDs added: admin-login-btn, admin-logout-btn (top-right), invite-link-btn (bottom-bar 'Convidar'), edit-player-{id} (admin only), generate-btn, type-mensalista, type-convidado, copy-invite-btn, share-invite-btn, invite-result, submit-invite-btn, invite-notfound. Admin credentials in /app/memory/test_credentials.md still valid: admin@futlista.com/admin123.",
+  "rca_of_issue": "N/A — feature addition iteration; no bugs found."
+}

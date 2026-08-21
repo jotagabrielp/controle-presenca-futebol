@@ -1,4 +1,5 @@
 import { BACKEND_URL } from "./theme";
+import { authStore } from "./utils/auth";
 
 export type PlayerType = "mensalista" | "convidado";
 
@@ -102,15 +103,31 @@ export interface ExpensesSummary {
 const url = (p: string) => `${BACKEND_URL}/api${p}`;
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url(path), {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-  });
+  const token = await authStore.getToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((init?.headers as Record<string, string>) || {}),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url(path), { ...init, headers });
+  if (res.status === 401) {
+    await authStore.clear();
+    throw new Error("unauthorized");
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+export interface Invite {
+  id: string;
+  token: string;
+  type: PlayerType;
+  created_by: string;
+  created_at: string;
+  uses: number;
 }
 
 export const api = {
@@ -179,4 +196,41 @@ export const api = {
   deleteExpense: (id: string) => req<any>(`/expenses/${id}`, { method: "DELETE" }),
   expensesSummary: (month?: string) =>
     req<ExpensesSummary>(`/expenses/summary${month ? `?month=${month}` : ""}`),
+
+  // Auth
+  authSetupRequired: () => req<{ setup_required: boolean }>("/auth/setup-required"),
+  authSetup: (email: string, password: string) =>
+    req<{ access_token: string; email: string }>("/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  authLogin: async (email: string, password: string) => {
+    const body = new URLSearchParams({ username: email, password }).toString();
+    const res = await fetch(url("/auth/login"), {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    if (!res.ok) throw new Error("E-mail ou senha inválidos");
+    return (await res.json()) as { access_token: string; email: string };
+  },
+  authMe: () => req<{ email: string }>("/auth/me"),
+  authPromote: (email: string, password: string) =>
+    req<{ access_token: string; email: string }>("/auth/promote", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  authListAdmins: () => req<{ email: string }[]>("/auth/admins"),
+
+  // Invites
+  createInvite: (type: PlayerType) =>
+    req<Invite>("/invites", { method: "POST", body: JSON.stringify({ type }) }),
+  getInvite: (token: string) => req<Invite>(`/invites/${token}`),
+  acceptInvite: (token: string, name: string) =>
+    req<Player>(`/invites/${token}/accept`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  listInvites: () => req<Invite[]>("/invites"),
+  deleteInvite: (id: string) => req<any>(`/invites/${id}`, { method: "DELETE" }),
 };

@@ -1,14 +1,19 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Depends
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
+from pydantic import BaseModel, EmailStr, Field
+from typing import List, Optional, Literal, Annotated
 import uuid
 from datetime import datetime, timezone, timedelta, date
+import secrets
+
+import jwt as pyjwt
+from passlib.context import CryptContext
 
 
 ROOT_DIR = Path(__file__).parent
@@ -18,6 +23,13 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+JWT_SECRET = os.environ['JWT_SECRET']
+JWT_ALGORITHM = os.environ.get('JWT_ALGORITHM', 'HS256')
+JWT_EXPIRE_DAYS = int(os.environ.get('JWT_EXPIRE_DAYS', '30'))
+
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+DUMMY_HASH = pwd_ctx.hash("dummy-not-used")
+
 # Pricing constants (BRL)
 PRICE_MENSALISTA = 60
 PRICE_CONVIDADO = 20
@@ -25,6 +37,7 @@ PRICE_CHURRASCO = 20
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 # ---------- Models ----------
@@ -125,6 +138,34 @@ class ExpenseCreate(BaseModel):
     date: Optional[str] = None
 
 
+class AdminCredentials(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=72)
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    email: str
+
+
+class Invite(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    token: str = Field(default_factory=lambda: secrets.token_urlsafe(12))
+    type: Literal["mensalista", "convidado"]
+    created_by: str  # admin email or "player"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    uses: int = 0
+
+
+class InviteCreate(BaseModel):
+    type: Literal["mensalista", "convidado"]
+
+
+class InviteAccept(BaseModel):
+    name: str
+
+
 # ---------- Helpers ----------
 def _monday_of(d: date) -> date:
     return d - timedelta(days=d.weekday())
@@ -175,6 +216,54 @@ def _price_churrasco(p: dict) -> float:
 def _price_guest(p: dict) -> float:
     v = p.get("guest_fee")
     return float(v) if v is not None else float(PRICE_CONVIDADO)
+
+
+def _norm_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def _create_token(email: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": email,
+        "role": "admin",
+        "iat": now,
+        "exp": now + timedelta(days=JWT_EXPIRE_DAYS),
+    }
+    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+async def get_current_admin(token: Annotated[Optional[str], Depends(oauth2_scheme)]) -> dict:
+    err = HTTPException(status_code=401, detail="Não autorizado")
+    if not token:
+        raise err
+    try:
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        email = payload.get("sub")
+        if not email:
+            raise err
+    except pyjwt.PyJWTError:
+        raise err
+    admin = await db.admins.find_one({"email": email}, {"_id": 0})
+    if not admin:
+        raise err
+    return admin
+
+
+async def get_optional_admin(token: Annotated[Optional[str], Depends(oauth2_scheme)]) -> Optional[dict]:
+    if not token:
+        return None
+    try:
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        email = payload.get("sub")
+        if not email:
+            return None
+    except pyjwt.PyJWTError:
+        return None
+    return await db.admins.find_one({"email": email}, {"_id": 0})
+
+
+AdminDep = Annotated[dict, Depends(get_current_admin)]
 
 
 async def _get_or_create_current_week() -> Week:
@@ -272,6 +361,108 @@ async def root():
     return {"message": "FutLista API"}
 
 
+# ---------- Auth ----------
+@api_router.get("/auth/setup-required")
+async def auth_setup_required():
+    count = await db.admins.count_documents({})
+    return {"setup_required": count == 0}
+
+
+@api_router.post("/auth/setup", response_model=Token)
+async def auth_setup(inp: AdminCredentials):
+    if await db.admins.count_documents({}) > 0:
+        raise HTTPException(status_code=409, detail="Admin já cadastrado. Use /auth/login")
+    email = _norm_email(inp.email)
+    await db.admins.insert_one({
+        "email": email,
+        "password_hash": pwd_ctx.hash(inp.password),
+        "created_at": datetime.now(timezone.utc),
+    })
+    return Token(access_token=_create_token(email), email=email)
+
+
+@api_router.post("/auth/login", response_model=Token)
+async def auth_login(form: Annotated[OAuth2PasswordRequestForm, Depends()]):
+    email = _norm_email(form.username)
+    admin = await db.admins.find_one({"email": email}, {"_id": 0})
+    valid = pwd_ctx.verify(form.password, admin["password_hash"] if admin else DUMMY_HASH)
+    if not admin or not valid:
+        raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
+    return Token(access_token=_create_token(email), email=email)
+
+
+@api_router.get("/auth/me")
+async def auth_me(admin: AdminDep):
+    return {"email": admin["email"]}
+
+
+@api_router.post("/auth/promote", response_model=Token)
+async def auth_promote(inp: AdminCredentials, actor: AdminDep):
+    email = _norm_email(inp.email)
+    existing = await db.admins.find_one({"email": email}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=409, detail="Já é admin")
+    await db.admins.insert_one({
+        "email": email,
+        "password_hash": pwd_ctx.hash(inp.password),
+        "promoted_by": actor["email"],
+        "created_at": datetime.now(timezone.utc),
+    })
+    return Token(access_token=_create_token(email), email=email)
+
+
+@api_router.get("/auth/admins")
+async def auth_list_admins(_: AdminDep):
+    docs = await db.admins.find({}, {"_id": 0, "password_hash": 0}).to_list(200)
+    return docs
+
+
+# ---------- Invites ----------
+@api_router.post("/invites", response_model=Invite)
+async def create_invite(inp: InviteCreate, admin: Optional[dict] = Depends(get_optional_admin)):
+    # Aberto a qualquer um: qualquer jogador pode gerar um link de convite
+    creator = admin["email"] if admin else "player"
+    inv = Invite(type=inp.type, created_by=creator)
+    await db.invites.insert_one(inv.model_dump())
+    return inv
+
+
+@api_router.get("/invites/{token}")
+async def get_invite(token: str):
+    inv = await db.invites.find_one({"token": token}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Convite não encontrado")
+    return inv
+
+
+@api_router.post("/invites/{token}/accept", response_model=Player)
+async def accept_invite(token: str, inp: InviteAccept):
+    inv = await db.invites.find_one({"token": token}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Convite inválido")
+    name = inp.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nome obrigatório")
+    p = Player(name=name, type=inv["type"])
+    await db.players.insert_one(p.model_dump())
+    await db.invites.update_one({"token": token}, {"$inc": {"uses": 1}})
+    return p
+
+
+@api_router.get("/invites")
+async def list_invites(_: AdminDep):
+    docs = await db.invites.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api_router.delete("/invites/{invite_id}")
+async def delete_invite(invite_id: str, _: AdminDep):
+    res = await db.invites.delete_one({"id": invite_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Convite não encontrado")
+    return {"ok": True}
+
+
 # Players
 @api_router.get("/players", response_model=List[Player])
 async def list_players():
@@ -280,7 +471,7 @@ async def list_players():
 
 
 @api_router.post("/players", response_model=Player)
-async def create_player(inp: PlayerCreate):
+async def create_player(inp: PlayerCreate, _: AdminDep):
     name = inp.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Nome obrigatório")
@@ -296,7 +487,7 @@ async def create_player(inp: PlayerCreate):
 
 
 @api_router.put("/players/{player_id}", response_model=Player)
-async def update_player(player_id: str, inp: PlayerUpdate):
+async def update_player(player_id: str, inp: PlayerUpdate, _: AdminDep):
     existing = await db.players.find_one({"id": player_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Jogador não encontrado")
@@ -333,7 +524,7 @@ async def update_player(player_id: str, inp: PlayerUpdate):
 
 
 @api_router.delete("/players/{player_id}")
-async def delete_player(player_id: str):
+async def delete_player(player_id: str, _: AdminDep):
     res = await db.players.delete_one({"id": player_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Jogador não encontrado")
@@ -568,7 +759,7 @@ async def get_monthly_current():
 
 
 @api_router.put("/monthly")
-async def upsert_monthly(inp: MonthlyPaymentUpsert):
+async def upsert_monthly(inp: MonthlyPaymentUpsert, _: AdminDep):
     now = datetime.now(timezone.utc)
     existing = await db.monthly_payments.find_one(
         {"player_id": inp.player_id, "month": inp.month}, {"_id": 0}
@@ -610,7 +801,7 @@ async def list_expenses(month: Optional[str] = None):
 
 
 @api_router.post("/expenses", response_model=Expense)
-async def create_expense(inp: ExpenseCreate):
+async def create_expense(inp: ExpenseCreate, _: AdminDep):
     desc = inp.description.strip()
     if not desc:
         raise HTTPException(status_code=400, detail="Descrição obrigatória")
@@ -629,7 +820,7 @@ async def create_expense(inp: ExpenseCreate):
 
 
 @api_router.delete("/expenses/{expense_id}")
-async def delete_expense(expense_id: str):
+async def delete_expense(expense_id: str, _: AdminDep):
     res = await db.expenses.delete_one({"id": expense_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Despesa não encontrada")
@@ -662,7 +853,7 @@ async def get_pix_settings():
 
 
 @api_router.put("/settings/pix")
-async def update_pix_settings(inp: PixSettings):
+async def update_pix_settings(inp: PixSettings, _: AdminDep):
     await db.settings.update_one(
         {"id": "pix"},
         {"$set": {
@@ -690,7 +881,7 @@ async def get_team_settings():
 
 
 @api_router.put("/settings/team")
-async def update_team_settings(inp: TeamSettings):
+async def update_team_settings(inp: TeamSettings, _: AdminDep):
     await db.settings.update_one(
         {"id": "team"},
         {"$set": {
