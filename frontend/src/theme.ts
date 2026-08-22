@@ -33,6 +33,7 @@ export const PRICES = {
   MENSALISTA: 60,
   CONVIDADO: 20,
   CHURRASCO: 20,
+  GOLEIRO: 0,
 };
 
 export const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;

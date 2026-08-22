@@ -84,19 +84,20 @@ export default function JoinScreen() {
   }
 
   const isMensa = invite.type === "mensalista";
+  const isGoleiro = invite.type === "goleiro";
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={styles.body}>
-          <View style={[styles.badge, { backgroundColor: isMensa ? colors.brandTertiary : "#EAF2F8" }]}>
+          <View style={[styles.badge, { backgroundColor: isMensa ? colors.brandTertiary : isGoleiro ? "#FFF3E0" : "#EAF2F8" }]}>
             <Ionicons
-              name={isMensa ? "star" : "person-add"}
+              name={isMensa ? "star" : isGoleiro ? "hand-left" : "person-add"}
               size={16}
-              color={isMensa ? colors.onBrandTertiary : "#1F5F84"}
+              color={isMensa ? colors.onBrandTertiary : isGoleiro ? "#8B5E3C" : "#1F5F84"}
             />
-            <Text style={[styles.badgeText, { color: isMensa ? colors.onBrandTertiary : "#1F5F84" }]}>
-              Convite para {isMensa ? "Mensalista" : "Convidado"}
+            <Text style={[styles.badgeText, { color: isMensa ? colors.onBrandTertiary : isGoleiro ? "#8B5E3C" : "#1F5F84" }]}>
+              Convite para {isMensa ? "Mensalista" : isGoleiro ? "Goleiro" : "Convidado"}
             </Text>
           </View>
 
@@ -109,13 +110,15 @@ export default function JoinScreen() {
             <Text style={styles.cardLabel}>Como você é cobrado:</Text>
             <View style={styles.priceRow}>
               <Ionicons
-                name={isMensa ? "star" : "person-add"}
+                name={isMensa ? "star" : isGoleiro ? "hand-left" : "person-add"}
                 size={16}
-                color={isMensa ? colors.brand : "#1F5F84"}
+                color={isMensa ? colors.brand : isGoleiro ? "#8B5E3C" : "#1F5F84"}
               />
               <Text style={styles.priceText}>
                 {isMensa
                   ? `${brl(PRICES.MENSALISTA)}/mês (paga até 5º dia útil)`
+                  : isGoleiro
+                  ? `Grátis (goleiro não paga)`
                   : `${brl(PRICES.CONVIDADO)} por jogo (paga antes do jogo)`}
               </Text>
             </View>

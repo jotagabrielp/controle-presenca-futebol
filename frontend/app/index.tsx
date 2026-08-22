@@ -35,11 +35,12 @@ const HERO_URL =
 const APP_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const GAME_SCHEDULE = "Toda terça, 21h";
 
-type FilterKey = "todos" | "mensalista" | "convidado";
+type FilterKey = "todos" | "mensalista" | "convidado" | "goleiro";
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "todos", label: "Todos" },
   { key: "mensalista", label: "Mensalistas" },
   { key: "convidado", label: "Convidados" },
+  { key: "goleiro", label: "Goleiros" },
 ];
 
 type PlayerStatus = "confirmed" | "waiting" | "off";
@@ -113,6 +114,7 @@ export default function Home() {
     (p: Player): PlayerStatus => {
       const a = attendanceMap.get(p.id);
       if (!a?.attending) return "off";
+      if (p.type === "goleiro") return "confirmed";
       if (p.type === "convidado") {
         return a.paid ? "confirmed" : "waiting";
       }
@@ -186,6 +188,7 @@ export default function Home() {
 
     const mensa = confirmedPlayers.filter((p) => p.type === "mensalista");
     const conv = confirmedPlayers.filter((p) => p.type === "convidado");
+    const goal = confirmedPlayers.filter((p) => p.type === "goleiro");
 
     lines.push(`*Mensalistas em dia:*`);
     mensa.forEach((p, i) => {
@@ -202,6 +205,14 @@ export default function Home() {
       lines.push(`${i + 1}. ${p.name}${churras}`);
     });
     if (conv.length === 0) lines.push("_(vazio)_");
+    lines.push("");
+    lines.push(`*Goleiros:*`);
+    goal.forEach((p, i) => {
+      const a = attendanceMap.get(p.id);
+      const churras = a?.churrasco ? " 🍖" : "";
+      lines.push(`${i + 1}. ${p.name}${churras}`);
+    });
+    if (goal.length === 0) lines.push("_(vazio)_");
 
     if (waitingPlayers.length > 0) {
       lines.push("");
@@ -623,8 +634,11 @@ function PlayerCard({
     .map((s) => s[0]?.toUpperCase())
     .join("");
   const isMensa = player.type === "mensalista";
+  const isGoleiro = player.type === "goleiro";
   const basePrice = isMensa
     ? player.monthly_fee ?? PRICES.MENSALISTA
+    : isGoleiro
+    ? 0
     : player.guest_fee ?? PRICES.CONVIDADO;
   const churrasPrice = player.churrasco_fee ?? PRICES.CHURRASCO;
   const hasCustom =
@@ -648,8 +662,8 @@ function PlayerCard({
     >
       <View style={styles.cardRow}>
         <Pressable onPress={onOpenHistory} testID={`open-history-${player.id}`}>
-          <View style={[styles.avatar, { backgroundColor: isMensa ? colors.brandTertiary : "#EAF2F8" }]}>
-            <Text style={[styles.avatarText, { color: isMensa ? colors.onBrandTertiary : "#1F5F84" }]}>
+          <View style={[styles.avatar, { backgroundColor: isMensa ? colors.brandTertiary : isGoleiro ? "#FFF3E0" : "#EAF2F8" }]}>
+            <Text style={[styles.avatarText, { color: isMensa ? colors.onBrandTertiary : isGoleiro ? "#8B5E3C" : "#1F5F84" }]}>
               {initials || "?"}
             </Text>
           </View>
@@ -657,14 +671,14 @@ function PlayerCard({
         <View style={{ flex: 1 }}>
           <Text style={styles.playerName}>{player.name}</Text>
           <View style={styles.badgeRow}>
-            <View style={[styles.typeBadge, { backgroundColor: isMensa ? colors.brandTertiary : "#EAF2F8" }]}>
+            <View style={[styles.typeBadge, { backgroundColor: isMensa ? colors.brandTertiary : isGoleiro ? "#FFF3E0" : "#EAF2F8" }]}>
               <Ionicons
-                name={isMensa ? "star" : "person-add"}
+                name={isMensa ? "star" : isGoleiro ? "hand-left" : "person-add"}
                 size={10}
-                color={isMensa ? colors.onBrandTertiary : "#1F5F84"}
+                color={isMensa ? colors.onBrandTertiary : isGoleiro ? "#8B5E3C" : "#1F5F84"}
               />
-              <Text style={[styles.typeBadgeText, { color: isMensa ? colors.onBrandTertiary : "#1F5F84" }]}>
-                {isMensa ? `Mensalista · ${brl(basePrice)}/mês` : `Convidado · ${brl(basePrice)}`}
+              <Text style={[styles.typeBadgeText, { color: isMensa ? colors.onBrandTertiary : isGoleiro ? "#8B5E3C" : "#1F5F84" }]}>
+                {isMensa ? `Mensalista · ${brl(basePrice)}/mês` : isGoleiro ? `Goleiro · Grátis` : `Convidado · ${brl(basePrice)}`}
               </Text>
             </View>
             {hasCustom && (

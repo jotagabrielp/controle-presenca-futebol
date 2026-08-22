@@ -48,7 +48,7 @@ export default function InviteScreen() {
 
   const shareWhatsApp = async () => {
     if (!inviteUrl) return;
-    const label = type === "mensalista" ? "Mensalista" : "Convidado";
+    const label = type === "mensalista" ? "Mensalista" : type === "goleiro" ? "Goleiro" : "Convidado";
     const msg = `⚽ *Convite pra entrar na turma!*\n\nEntra na lista de presença como *${label}*:\n\n👉 ${inviteUrl}\n\n🗓️ Toda terça, 21h`;
     const url = `whatsapp://send?text=${encodeURIComponent(msg)}`;
     const can = await Linking.canOpenURL(url);
@@ -99,6 +99,17 @@ export default function InviteScreen() {
             <Text style={[styles.typeText, type === "convidado" && { color: "#fff" }]}>Convidado</Text>
             <Text style={[styles.typeSub, type === "convidado" && { color: "rgba(255,255,255,0.8)" }]}>
               R$20 por jogo
+            </Text>
+          </Pressable>
+          <Pressable
+            testID="type-goleiro"
+            onPress={() => setType("goleiro")}
+            style={[styles.typeBtn, type === "goleiro" && styles.typeBtnActive]}
+          >
+            <Ionicons name="hand-left" size={20} color={type === "goleiro" ? "#fff" : colors.brand} />
+            <Text style={[styles.typeText, type === "goleiro" && { color: "#fff" }]}>Goleiro</Text>
+            <Text style={[styles.typeSub, type === "goleiro" && { color: "rgba(255,255,255,0.8)" }]}>
+              Grátis
             </Text>
           </Pressable>
         </View>

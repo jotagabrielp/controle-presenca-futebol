@@ -34,6 +34,7 @@ DUMMY_HASH = pwd_ctx.hash("dummy-not-used")
 PRICE_MENSALISTA = 60
 PRICE_CONVIDADO = 20
 PRICE_CHURRASCO = 20
+PRICE_GOLEIRO = 0
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -44,7 +45,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=Fals
 class Player(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
-    type: Literal["mensalista", "convidado"]
+    type: Literal["mensalista", "convidado", "goleiro"]
     monthly_fee: Optional[float] = None  # override; None = usa PRICE_MENSALISTA
     churrasco_fee: Optional[float] = None  # override; None = usa PRICE_CHURRASCO
     guest_fee: Optional[float] = None  # override para convidado; None = usa PRICE_CONVIDADO
@@ -53,7 +54,7 @@ class Player(BaseModel):
 
 class PlayerCreate(BaseModel):
     name: str
-    type: Literal["mensalista", "convidado"]
+    type: Literal["mensalista", "convidado", "goleiro"]
     monthly_fee: Optional[float] = None
     churrasco_fee: Optional[float] = None
     guest_fee: Optional[float] = None
@@ -61,7 +62,7 @@ class PlayerCreate(BaseModel):
 
 class PlayerUpdate(BaseModel):
     name: Optional[str] = None
-    type: Optional[Literal["mensalista", "convidado"]] = None
+    type: Optional[Literal["mensalista", "convidado", "goleiro"]] = None
     monthly_fee: Optional[float] = None
     churrasco_fee: Optional[float] = None
     guest_fee: Optional[float] = None
@@ -152,14 +153,14 @@ class Token(BaseModel):
 class Invite(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     token: str = Field(default_factory=lambda: secrets.token_urlsafe(12))
-    type: Literal["mensalista", "convidado"]
+    type: Literal["mensalista", "convidado", "goleiro"]
     created_by: str  # admin email or "player"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     uses: int = 0
 
 
 class InviteCreate(BaseModel):
-    type: Literal["mensalista", "convidado"]
+    type: Literal["mensalista", "convidado", "goleiro"]
 
 
 class InviteAccept(BaseModel):
@@ -306,6 +307,7 @@ async def _summary_for_week(week_id: str) -> dict:
     count_mensalistas_pendentes = 0
     count_convidados = 0
     count_convidados_pendentes = 0
+    count_goleiros = 0
     count_churrasco = 0
     count_pagos = 0
 
@@ -321,6 +323,8 @@ async def _summary_for_week(week_id: str) -> dict:
                 count_mensalistas_pendentes += 1
                 continue
             count_mensalistas += 1
+        elif p["type"] == "goleiro":
+            count_goleiros += 1
         else:
             if not is_paid:
                 count_convidados_pendentes += 1
@@ -349,9 +353,10 @@ async def _summary_for_week(week_id: str) -> dict:
         "count_mensalistas_pendentes": count_mensalistas_pendentes,
         "count_convidados": count_convidados,
         "count_convidados_pendentes": count_convidados_pendentes,
+        "count_goleiros": count_goleiros,
         "count_churrasco": count_churrasco,
         "count_pagos": count_pagos,
-        "count_confirmados": count_mensalistas + count_convidados,
+        "count_confirmados": count_mensalistas + count_convidados + count_goleiros,
     }
 
 
@@ -577,7 +582,7 @@ async def list_weeks():
         week_monday = date.fromisoformat(w["week_start"])
         month = _current_month_key(week_monday)
         atts = per_week.get(w["id"], [])
-        tc = tch = tp = cm = cmp = cc = ccp = cch = cp = 0
+        tc = tch = tp = cm = cmp = cc = ccp = cg = cch = cp = 0
         for a in atts:
             p = players_by_id.get(a["player_id"])
             if not p:
@@ -590,6 +595,8 @@ async def list_weeks():
                     cmp += 1
                     continue
                 cm += 1
+            elif p["type"] == "goleiro":
+                cg += 1
             else:
                 if not is_paid:
                     ccp += 1
@@ -618,9 +625,10 @@ async def list_weeks():
                 "count_mensalistas_pendentes": cmp,
                 "count_convidados": cc,
                 "count_convidados_pendentes": ccp,
+                "count_goleiros": cg,
                 "count_churrasco": cch,
                 "count_pagos": cp,
-                "count_confirmados": cm + cc,
+                "count_confirmados": cm + cc + cg,
             },
         })
     return out

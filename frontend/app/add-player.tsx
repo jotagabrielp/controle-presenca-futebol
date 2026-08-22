@@ -94,6 +94,15 @@ export default function AddPlayer() {
               onPress={() => setType("convidado")}
               tint="#1F5F84"
             />
+            <TypeCard
+              testID="type-goleiro"
+              active={type === "goleiro"}
+              icon="hand-left"
+              title="Goleiro"
+              price="Grátis"
+              onPress={() => setType("goleiro")}
+              tint="#8B5E3C"
+            />
           </View>
         </View>
 

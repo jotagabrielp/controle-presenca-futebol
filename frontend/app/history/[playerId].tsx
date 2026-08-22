@@ -79,9 +79,9 @@ export default function PlayerHistory() {
                 </Text>
               </View>
               <Text style={styles.name}>{data.player.name}</Text>
-              <View style={[styles.typeBadge, { backgroundColor: isMensa ? colors.brandTertiary : "#EAF2F8" }]}>
-                <Text style={[styles.typeText, { color: isMensa ? colors.onBrandTertiary : "#1F5F84" }]}>
-                  {isMensa ? "Mensalista" : "Convidado"}
+              <View style={[styles.typeBadge, { backgroundColor: isMensa ? colors.brandTertiary : data.player.type === "goleiro" ? "#FFF3E0" : "#EAF2F8" }]}>
+                <Text style={[styles.typeText, { color: isMensa ? colors.onBrandTertiary : data.player.type === "goleiro" ? "#8B5E3C" : "#1F5F84" }]}>
+                  {isMensa ? "Mensalista" : data.player.type === "goleiro" ? "Goleiro" : "Convidado"}
                 </Text>
               </View>
             </View>

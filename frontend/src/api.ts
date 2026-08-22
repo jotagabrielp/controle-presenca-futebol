@@ -1,7 +1,7 @@
 import { BACKEND_URL } from "./theme";
 import { authStore } from "./utils/auth";
 
-export type PlayerType = "mensalista" | "convidado";
+export type PlayerType = "mensalista" | "convidado" | "goleiro";
 
 export interface Player {
   id: string;
@@ -39,6 +39,7 @@ export interface Summary {
   count_mensalistas_pendentes: number;
   count_convidados: number;
   count_convidados_pendentes: number;
+  count_goleiros: number;
   count_churrasco: number;
   count_pagos: number;
   count_confirmados: number;
