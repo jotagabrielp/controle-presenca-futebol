@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api, PlayerType } from "@/src/api";
 import { colors, radius, spacing } from "@/src/theme";
 
-const APP_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+const APP_URL = process.env.EXPO_PUBLIC_APP_URL || (typeof window !== "undefined" ? window.location.origin : "");
 
 export default function InviteScreen() {
   const router = useRouter();
