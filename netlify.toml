@@ -5,7 +5,7 @@
 
 [build.environment]
   NODE_VERSION = "20.19.4"
-  EXPO_PUBLIC_BACKEND_URL = ""
+  EXPO_PUBLIC_BACKEND_URL = "https://controle-presenca-futebol-production.up.railway.app"
 
 # SPA fallback for Expo Router
 [[redirects]]
